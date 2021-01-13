@@ -12,5 +12,10 @@ train_std = np.std(train_images, axis=(0, 1, 2))
 train_images = (train_images - train_mean) / train_std
 test_images = (test_images - train_mean) / train_std
 
-model = resnet50.ResNet50(include_top=False, pooling='avg', backend=tf.keras.backend,
+model = resnet50.ResNet50(classes=100, backend=tf.keras.backend,
                           layers=tf.keras.layers, models=tf.keras.models, utils=tf.keras.utils)
+
+(output,
+ routing_0, mask_0, x_masked_0,
+ routing_1, mask_1, x_masked_1,
+ routing_2, mask_2, x_masked_2) = model(train_images[:16])

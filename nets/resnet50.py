@@ -250,6 +250,12 @@ def ResNet50(input_tensor=None,
     else:
         inputs = img_input
     # Create model.
-    model = models.Model(inputs, [x, routing_0, mask_0, x_masked_0], name='resnet50')
+    model = models.Model(inputs,
+                         [
+                             x,
+                             routing_0, mask_0, x_masked_0,
+                             routing_1, mask_1, x_masked_1,
+                             routing_2, mask_2, x_masked_2,
+                         ], name='resnet50')
 
     return model
