@@ -126,46 +126,51 @@ def conv_block(input_tensor,
     return x
 
 
-def ResNet50(include_top=True,
-             input_tensor=None,
+def routing_block(input_tensor,
+                  num_routes,
+                  stage
+                  ):
+    name_base = 'inf_gain_' + str(stage)
+    x = layers.Conv2D(64, (3, 3),
+                      strides=(2, 2),
+                      padding='valid',
+                      kernel_initializer='he_normal',
+                      name=f'{name_base}_conv')(input_tensor)
+    x = layers.GlobalAveragePooling2D(name=f'{name_base}_gap')(x)
+    x = layers.Dense(num_routes, activation='softmax',
+                     name=f"{name_base}_fc")(x)
+    return x
+
+
+def routing_mask(information_gain_input_tensor, num_routes, feature_map_size):
+    route_width = int(feature_map_size / num_routes)
+    route = tf.argmax(information_gain_input_tensor, axis=-1)
+    route_index_lower = tf.cast(tf.expand_dims(route * route_width, axis=-1), tf.int32)
+    route_index_upper = tf.cast(tf.expand_dims((route + 1) * route_width, axis=-1), tf.int32)
+    route_index = tf.expand_dims(tf.range(feature_map_size), axis=0)
+
+    mask = tf.math.greater_equal(route_index, route_index_lower)
+    mask = tf.logical_and(mask, tf.math.less(route_index, route_index_upper))
+    mask = tf.expand_dims(tf.expand_dims(mask, 1), 1)
+
+    return mask
+
+
+def ResNet50(input_tensor=None,
              input_shape=None,
-             pooling=None,
-             classes=1000,
+             classes=100,
              **kwargs):
     """Instantiates the ResNet50 architecture.
     Note that the data format convention used by the model is
     the one specified in your Keras config at `~/.keras/keras.json`.
     # Arguments
-        include_top: whether to include the fully-connected
-            layer at the top of the network.
         input_tensor: optional Keras tensor (i.e. output of `layers.Input()`)
             to use as image input for the model.
         input_shape: optional shape tuple, only to be specified
-            if `include_top` is False (otherwise the input shape
-            has to be `(224, 224, 3)` (with `channels_last` data format)
-            or `(3, 224, 224)` (with `channels_first` data format).
-            It should have exactly 3 inputs channels,
-            and width and height should be no smaller than 32.
-            E.g. `(200, 200, 3)` would be one valid value.
-        pooling: Optional pooling mode for feature extraction
-            when `include_top` is `False`.
-            - `None` means that the output of the model will be
-                the 4D tensor output of the
-                last convolutional block.
-            - `avg` means that global average pooling
-                will be applied to the output of the
-                last convolutional block, and thus
-                the output of the model will be a 2D tensor.
-            - `max` means that global max pooling will
-                be applied.
-        classes: optional number of classes to classify images
-            into, only to be specified if `include_top` is True, and
-            if no `weights` argument is specified.
+        classes: number of classes to classify images into,
     # Returns
         A Keras model instance.
-    # Raises
-        ValueError: in case of invalid argument for `weights`,
-            or invalid input shape.
+
     """
     global backend, layers, models, keras_utils
     backend, layers, models, keras_utils = get_submodules_from_kwargs(kwargs)
@@ -175,7 +180,7 @@ def ResNet50(include_top=True,
                                       default_size=224,
                                       min_size=32,
                                       data_format=backend.image_data_format(),
-                                      require_flatten=include_top)
+                                      require_flatten=False)
 
     if input_tensor is None:
         img_input = layers.Input(shape=input_shape)
@@ -204,36 +209,20 @@ def ResNet50(include_top=True,
     x = identity_block(x, 3, [64, 64, 256], stage=2, block='b')
     x = identity_block(x, 3, [64, 64, 256], stage=2, block='c')
 
-    information_gain_1_num_routes = 4
-    information_gain_1_route_size = 256 // information_gain_1_num_routes
-    information_gain_1_x = x
-    information_gain_1 = layers.Conv2D(64, (3, 3),
-                                       strides=(2, 2),
-                                       padding='valid',
-                                       kernel_initializer='he_normal',
-                                       name='inf_gain_1_conv1')(information_gain_1_x)
-    information_gain_1 = layers.GlobalAveragePooling2D(name='inf_gain_1_avg_pool')(information_gain_1)
-    information_gain_1 = layers.Dense(information_gain_1_num_routes, activation='softmax',
-                                      name='inf_gain_1_avg_pool_fc')(information_gain_1)
-    information_gain_1_route = tf.argmax(information_gain_1, axis=-1)
-    information_gain_1_route_lower = tf.expand_dims(
-        tf.cast(information_gain_1_route * information_gain_1_route_size, tf.int32), axis=-1)
-    information_gain_1_route_upper = tf.expand_dims(
-        tf.cast((information_gain_1_route + 1) * information_gain_1_route_size, tf.int32),
-        axis=-1)
-    information_gain_1_index = tf.expand_dims(tf.range(256), axis=0)
-
-    information_gain_1_mask = tf.math.greater_equal(information_gain_1_index, information_gain_1_route_lower)
-    information_gain_1_mask = tf.logical_and(information_gain_1_mask,
-                                             tf.math.less(information_gain_1_index, information_gain_1_route_upper))
-    information_gain_1_mask = tf.expand_dims(tf.expand_dims(information_gain_1_mask, 1), 1)
-    information_gain_1_output = information_gain_1_x * tf.cast(information_gain_1_mask, tf.float32)
-    x = information_gain_1_output
+    routing_0 = routing_block(x, num_routes=4, stage=0)
+    mask_0 = routing_mask(routing_0, num_routes=4, feature_map_size=256)
+    x_masked_0 = x * tf.cast(mask_0, tf.float32)
+    x = x_masked_0
 
     x = conv_block(x, 3, [128, 128, 512], stage=3, block='a')
     x = identity_block(x, 3, [128, 128, 512], stage=3, block='b')
     x = identity_block(x, 3, [128, 128, 512], stage=3, block='c')
     x = identity_block(x, 3, [128, 128, 512], stage=3, block='d')
+
+    routing_1 = routing_block(x, num_routes=4, stage=1)
+    mask_1 = routing_mask(routing_1, num_routes=4, feature_map_size=512)
+    x_masked_1 = x * tf.cast(mask_1, tf.float32)
+    x = x_masked_1
 
     x = conv_block(x, 3, [256, 256, 1024], stage=4, block='a')
     x = identity_block(x, 3, [256, 256, 1024], stage=4, block='b')
@@ -242,21 +231,17 @@ def ResNet50(include_top=True,
     x = identity_block(x, 3, [256, 256, 1024], stage=4, block='e')
     x = identity_block(x, 3, [256, 256, 1024], stage=4, block='f')
 
+    routing_2 = routing_block(x, num_routes=4, stage=2)
+    mask_2 = routing_mask(routing_2, num_routes=4, feature_map_size=1024)
+    x_masked_2 = x * tf.cast(mask_2, tf.float32)
+    x = x_masked_2
+
     x = conv_block(x, 3, [512, 512, 2048], stage=5, block='a')
     x = identity_block(x, 3, [512, 512, 2048], stage=5, block='b')
     x = identity_block(x, 3, [512, 512, 2048], stage=5, block='c')
 
-    if include_top:
-        x = layers.GlobalAveragePooling2D(name='avg_pool')(x)
-        x = layers.Dense(classes, activation='softmax', name='fc1000')(x)
-    else:
-        if pooling == 'avg':
-            x = layers.GlobalAveragePooling2D()(x)
-        elif pooling == 'max':
-            x = layers.GlobalMaxPooling2D()(x)
-        else:
-            warnings.warn('The output shape of `ResNet50(include_top=False)` '
-                          'has been changed since Keras 2.2.0.')
+    x = layers.GlobalAveragePooling2D(name='avg_pool')(x)
+    x = layers.Dense(classes, activation='softmax', name='fc')(x)
 
     # Ensure that the model takes into account
     # any potential predecessors of `input_tensor`.
@@ -265,7 +250,6 @@ def ResNet50(include_top=True,
     else:
         inputs = img_input
     # Create model.
-    model = models.Model(inputs, [x, information_gain_1_x, information_gain_1_output, information_gain_1],
-                         name='resnet50')
+    model = models.Model(inputs, [x, routing_0, mask_0, x_masked_0], name='resnet50')
 
     return model
