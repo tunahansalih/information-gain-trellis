@@ -137,7 +137,7 @@ def routing_block(input_tensor,
                       kernel_initializer='he_normal',
                       name=f'{name_base}_conv')(input_tensor)
     x = layers.GlobalAveragePooling2D(name=f'{name_base}_gap')(x)
-    x = layers.Dense(num_routes, activation='softmax',
+    x = layers.Dense(num_routes, activation=None,
                      name=f"{name_base}_fc")(x)
     return x
 
@@ -210,7 +210,8 @@ def ResNet50(input_tensor=None,
     x = identity_block(x, 3, [64, 64, 256], stage=2, block='c')
 
     routing_0 = routing_block(x, num_routes=4, stage=0)
-    mask_0 = routing_mask(routing_0, num_routes=4, feature_map_size=256)
+    routing_softmax_0 = tf.nn.softmax(routing_0)
+    mask_0 = routing_mask(routing_softmax_0, num_routes=4, feature_map_size=256)
     x_masked_0 = x * tf.cast(mask_0, tf.float32)
     x = x_masked_0
 
@@ -220,7 +221,8 @@ def ResNet50(input_tensor=None,
     x = identity_block(x, 3, [128, 128, 512], stage=3, block='d')
 
     routing_1 = routing_block(x, num_routes=4, stage=1)
-    mask_1 = routing_mask(routing_1, num_routes=4, feature_map_size=512)
+    routing_softmax_1 = tf.nn.softmax(routing_1)
+    mask_1 = routing_mask(routing_softmax_1, num_routes=4, feature_map_size=512)
     x_masked_1 = x * tf.cast(mask_1, tf.float32)
     x = x_masked_1
 
@@ -232,7 +234,8 @@ def ResNet50(input_tensor=None,
     x = identity_block(x, 3, [256, 256, 1024], stage=4, block='f')
 
     routing_2 = routing_block(x, num_routes=4, stage=2)
-    mask_2 = routing_mask(routing_2, num_routes=4, feature_map_size=1024)
+    routing_softmax_2 = tf.nn.softmax(routing_2)
+    mask_2 = routing_mask(routing_softmax_2, num_routes=4, feature_map_size=1024)
     x_masked_2 = x * tf.cast(mask_2, tf.float32)
     x = x_masked_2
 
