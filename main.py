@@ -1,7 +1,10 @@
 import numpy as np
 import tensorflow as tf
-from nets import resnet50
+
+from loss.information_gain import information_gain_loss_fn
+from nets.routing_layer import routing_block, routing_mask
 from tqdm import tqdm
+from sklearn.model_selection import train_test_split
 
 gpus = tf.config.experimental.list_physical_devices('GPU')
 if gpus:
@@ -17,86 +20,135 @@ if gpus:
 
 print("Num GPUs Available: ", len(tf.config.experimental.list_physical_devices('GPU')))
 
-(train_images, train_labels), (test_images, test_labels) = tf.keras.datasets.cifar100.load_data()
+NUM_EPOCHS = 100
+BATCH_SIZE = 125
+USE_ROUTING = True
+LR_INITIAL = 0.01
 
-train_mean = np.mean(train_images, axis=(0, 1, 2))
-train_std = np.std(train_images, axis=(0, 1, 2))
+(train_x, train_y), (test_x, test_y) = tf.keras.datasets.fashion_mnist.load_data()
+train_x = np.expand_dims(train_x, -1)
+test_x = np.expand_dims(test_x, -1)
 
-train_images = (train_images - train_mean) / train_std
-test_images = (test_images - train_mean) / train_std
+train_x = train_x / 255.0
+test_x = test_x / 255.0
 
-model = resnet50.ResNet50(classes=100, backend=tf.keras.backend,
-                          layers=tf.keras.layers, models=tf.keras.models, utils=tf.keras.utils)
+train_y = tf.keras.utils.to_categorical(train_y, 10)
+test_y = tf.keras.utils.to_categorical(test_y, 10)
 
+# train_x, validation_x, train_y, validation_y = train_test_split(train_x, train_y, test_size=0.1)
 
-def entropy(prob_distribution):
-    log_prob = tf.math.log(prob_distribution + tf.keras.backend.epsilon())
+dataset_train = tf.data.Dataset.from_tensor_slices((train_x, train_y)).shuffle(1000, seed=5361).batch(BATCH_SIZE)
+dataset_validation = tf.data.Dataset.from_tensor_slices((test_x, test_y)).batch(BATCH_SIZE)
+dataset_test = tf.data.Dataset.from_tensor_slices((test_x, test_y)).batch(BATCH_SIZE)
 
-    prob_log_prob = prob_distribution * log_prob
-    entropy_val = -1.0 * tf.reduce_sum(prob_log_prob)
-    return entropy_val, log_prob
+### Model Definition
+input_img = tf.keras.layers.Input((28, 28, 1))
+x = tf.keras.layers.Conv2D(32, (5, 5), padding="same")(input_img)
+x = tf.keras.layers.ReLU()(x)
+x = tf.keras.layers.MaxPool2D((2, 2))(x)
 
+x = tf.keras.layers.Conv2D(64, (5, 5), padding="same")(x)
+x = tf.keras.layers.ReLU()(x)
+x = tf.keras.layers.MaxPool2D((2, 2))(x)
 
-def loss_fn(p_n_given_x_2d, p_c_given_x_2d, balance_coefficient):
-    p_n_given_x_3d = tf.expand_dims(input=p_n_given_x_2d, axis=1)
-    p_c_given_x_3d = tf.expand_dims(input=p_c_given_x_2d, axis=2)
-    non_normalized_joint_xcn = p_n_given_x_3d * p_c_given_x_3d
-    # Calculate p(c,n)
-    marginal_p_cn = tf.reduce_mean(non_normalized_joint_xcn, axis=0)
-    # Calculate p(n)
-    marginal_p_n = tf.reduce_sum(marginal_p_cn, axis=0)
-    # Calculate p(c)
-    marginal_p_c = tf.reduce_sum(marginal_p_cn, axis=1)
-    # Calculate entropies
-    entropy_p_cn, log_prob_p_cn = entropy(prob_distribution=marginal_p_cn)
-    entropy_p_n, log_prob_p_n = entropy(prob_distribution=marginal_p_n)
-    entropy_p_c, log_prob_p_c = entropy(prob_distribution=marginal_p_c)
-    # Calculate the information gain
-    information_gain = (balance_coefficient * entropy_p_n) + entropy_p_c - entropy_p_cn
-    information_gain = -1.0 * information_gain
-    return information_gain
+if USE_ROUTING:
+    routing_0 = routing_block(x, num_routes=4, stage=0)
+    routing_softmax_0 = tf.nn.softmax(routing_0)
+    mask_0 = routing_mask(routing_softmax_0, num_routes=4, feature_map_size=64)
+    x_masked_0 = x * tf.cast(mask_0, tf.float32)
+    x = x_masked_0
 
+x = tf.keras.layers.Conv2D(128, (5, 5), padding="same")(x)
+x = tf.keras.layers.ReLU()(x)
+x = tf.keras.layers.MaxPool2D((2, 2))(x)
 
-softmax_decay = 1000
-optimizer = tf.optimizers.RMSprop()
-accuracy_metric = tf.keras.metrics.CategoricalAccuracy()
-losses = []
-pbar = tqdm(range(10000))
-for step in pbar:
-    indices = np.random.randint(len(train_images), size=30)
-    x = train_images[indices]
-    x = tf.image.resize(x, [224, 224], method=tf.image.ResizeMethod.BILINEAR, preserve_aspect_ratio=False,
-                        antialias=False, name=None)
+if USE_ROUTING:
+    routing_1 = routing_block(x, num_routes=4, stage=1)
+    routing_softmax_1 = tf.nn.softmax(routing_1)
+    mask_1 = routing_mask(routing_softmax_1, num_routes=4, feature_map_size=128)
+    x_masked_1 = x * tf.cast(mask_1, tf.float32)
+    x = x_masked_1
 
-    y = train_labels[indices].ravel()
+x = tf.keras.layers.Flatten()(x)
 
-    with tf.GradientTape() as tape:
-        (output,
-         routing_0, mask_0, x_masked_0,
-         routing_1, mask_1, x_masked_1,
-         routing_2, mask_2, x_masked_2) = model(x, training=True)
+x = tf.keras.layers.Dense(1024)(x)
+x = tf.keras.layers.ReLU()(x)
+x = tf.keras.layers.Dropout(0.35)(x)
+x = tf.keras.layers.Dense(512)(x)
+x = tf.keras.layers.ReLU()(x)
+x = tf.keras.layers.Dropout(0.35)(x)
+x = tf.keras.layers.Dense(10)(x)
 
-        routing_0 = routing_0 / softmax_decay
-        routing_0 = tf.nn.softmax(routing_0)
-        routing_1 = routing_1 / softmax_decay
-        routing_1 = tf.nn.softmax(routing_1)
-        routing_2 = routing_2 / softmax_decay
-        routing_2 = tf.nn.softmax(routing_2)
+if USE_ROUTING:
+    model = tf.keras.models.Model(input_img, [routing_0, routing_1, x])
+else:
+    model = tf.keras.models.Model(input_img, x)
 
-        y_one_hot = tf.one_hot(y, depth=100, on_value=1.0, off_value=0.0)
+loss_fn = tf.losses.CategoricalCrossentropy(from_logits=True)
+optimizer = tf.optimizers.SGD(lr=LR_INITIAL, momentum=0.9)
 
-        loss_value = loss_fn(p_n_given_x_2d=routing_0, p_c_given_x_2d=y_one_hot, balance_coefficient=1.0)
-        loss_value += loss_fn(p_n_given_x_2d=routing_1, p_c_given_x_2d=y_one_hot, balance_coefficient=1.0)
-        loss_value += loss_fn(p_n_given_x_2d=routing_2, p_c_given_x_2d=y_one_hot, balance_coefficient=1.0)
-        loss_value += tf.reduce_mean(tf.losses.categorical_crossentropy(y_one_hot, output))
-    grads = tape.gradient(loss_value, model.trainable_weights)
-    optimizer.apply_gradients(zip(grads, model.trainable_weights))
-    accuracy_metric.update_state(y_one_hot, output)
-    losses.append(loss_value.numpy())
+avg_accuracy = tf.keras.metrics.CategoricalAccuracy()
+avg_loss = tf.keras.metrics.Mean()
 
-    if step != 0 and step % 500 == 0:
-        accuracy_metric.reset_states()
+tau = 25
 
-    softmax_decay *= 0.9
+for epoch in range(NUM_EPOCHS):
+    print(f"Epoch {epoch}")
+    avg_accuracy.reset_states()
+    avg_loss.reset_states()
+    pbar = tqdm(dataset_train)
 
-    pbar.set_description(f"Accuracy: %{accuracy_metric.result().numpy() * 100:.2f} Loss: {loss_value.numpy():.5f}")
+    for i, (x_batch_train, y_batch_train) in enumerate(pbar):
+        step = epoch * (len(dataset_train)) + i
+        if step == 15000:
+            tf.keras.backend.set_value(optimizer.learning_rate, LR_INITIAL / 2)
+        if step == 30000:
+            tf.keras.backend.set_value(optimizer.learning_rate, LR_INITIAL / 4)
+        if step == 40000:
+            tf.keras.backend.set_value(optimizer.learning_rate, LR_INITIAL / 40)
+        with tf.GradientTape() as tape:
+            if USE_ROUTING:
+                route_0, route_1, logits = model(x_batch_train, training=True)
+                route_0 = tf.nn.softmax(route_0 / tau, axis=-1)
+                route_1 = tf.nn.softmax(route_1 / tau, axis=-1)
+                loss_value = loss_fn(y_batch_train, logits)
+                loss_value += information_gain_loss_fn(y_batch_train, route_0, balance_coefficient=5.0)
+                loss_value += information_gain_loss_fn(y_batch_train, route_1, balance_coefficient=5.0)
+            else:
+                logits = model(x_batch_train, training=True)
+                loss_value = loss_fn(y_batch_train, logits)
+
+        grads = tape.gradient(loss_value, model.trainable_weights)
+        optimizer.apply_gradients(zip(grads, model.trainable_weights))
+        avg_accuracy.update_state(y_batch_train, logits)
+        avg_loss.update_state(loss_value)
+        pbar.set_description(
+            f"Training Accuracy: %{avg_accuracy.result().numpy() * 100:.2f} Loss: {avg_loss.result().numpy():.5f}")
+
+        if step % 2 == 1:
+            tau = tau * 0.9999
+
+    avg_accuracy.reset_states()
+    pbar = tqdm(dataset_validation)
+    for (x_batch_val, y_batch_val) in pbar:
+        if USE_ROUTING:
+            route_0, route_1, logits = model(x_batch_val, training=False)
+        else:
+            logits = model(x_batch_val, training=False)
+        avg_accuracy.update_state(y_batch_val, logits)
+
+        pbar.set_description(
+            f"Validation Accuracy: %{avg_accuracy.result().numpy() * 100:.2f}")
+
+avg_accuracy.reset_states()
+pbar = tqdm(dataset_test)
+
+for (x_batch_test, y_batch_test) in pbar:
+    if USE_ROUTING:
+        route_0, route_1, logits = model(x_batch_test, training=False)
+    else:
+        logits = model(x_batch_test, training=False)
+    avg_accuracy.update_state(y_batch_test, logits)
+
+    pbar.set_description(
+        f"Test Accuracy: %{avg_accuracy.result().numpy() * 100:.2f}")
