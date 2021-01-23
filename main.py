@@ -24,6 +24,7 @@ NUM_EPOCHS = 100
 BATCH_SIZE = 125
 USE_ROUTING = True
 LR_INITIAL = 0.01
+DROPOUT_RATE = 0.1
 
 (train_x, train_y), (test_x, test_y) = tf.keras.datasets.fashion_mnist.load_data()
 train_x = np.expand_dims(train_x, -1)
@@ -73,10 +74,10 @@ x = tf.keras.layers.Flatten()(x)
 
 x = tf.keras.layers.Dense(1024)(x)
 x = tf.keras.layers.ReLU()(x)
-x = tf.keras.layers.Dropout(0.35)(x)
+x = tf.keras.layers.Dropout(DROPOUT_RATE)(x)
 x = tf.keras.layers.Dense(512)(x)
 x = tf.keras.layers.ReLU()(x)
-x = tf.keras.layers.Dropout(0.35)(x)
+x = tf.keras.layers.Dropout(DROPOUT_RATE)(x)
 x = tf.keras.layers.Dense(10)(x)
 
 if USE_ROUTING:
