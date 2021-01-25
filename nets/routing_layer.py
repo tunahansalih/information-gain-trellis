@@ -3,31 +3,30 @@ from tensorflow.keras import layers
 import tensorflow as tf
 
 
-def routing_block(input_tensor,
-                  num_routes,
-                  stage
-                  ):
-    name_base = 'inf_gain_' + str(stage)
-    x = layers.Conv2D(64, (3, 3),
-                      strides=(2, 2),
-                      padding='valid',
-                      kernel_initializer='he_normal',
-                      name=f'{name_base}_conv')(input_tensor)
-    x = layers.GlobalAveragePooling2D(name=f'{name_base}_gap')(x)
-    x = layers.Dense(num_routes, activation=None,
-                     name=f"{name_base}_fc")(x)
-    return x
+class RoutingLayer(tf.keras.layers.Layer):
+    def __init__(self, routes):
+        super(RoutingLayer, self).__init__()
+        self.routes = routes
+        self.conv = layers.Conv2D(64, (3, 3),
+                                  strides=(2, 2),
+                                  padding='valid',
+                                  kernel_initializer='he_normal',
+                                  )
+        self.avg_pool = layers.GlobalAveragePooling2D()
+        self.fc = layers.Dense(routes, activation=None)
 
+    def call(self, inputs):
+        routing_x = self.conv(inputs)
+        routing_x = self.avg_pool(routing_x)
+        routing_x = self.fc(routing_x)
 
-def routing_mask(information_gain_input_tensor, num_routes, feature_map_size):
-    route_width = int(feature_map_size / num_routes)
-    route = tf.argmax(information_gain_input_tensor, axis=-1)
-    route_index_lower = tf.cast(tf.expand_dims(route * route_width, axis=-1), tf.int32)
-    route_index_upper = tf.cast(tf.expand_dims((route + 1) * route_width, axis=-1), tf.int32)
-    route_index = tf.expand_dims(tf.range(feature_map_size), axis=0)
+        route_width = int(inputs.shape[-1] / self.routes)
+        route = tf.argmax(routing_x, axis=-1)
+        route = tf.one_hot(route, depth=self.routes)
+        route_mask = tf.expand_dims(tf.expand_dims(tf.repeat(route, route_width, axis=1), axis=1), axis=1)
+        route_mask = tf.repeat(route_mask, inputs.shape[1], axis=1)
+        route_mask = tf.repeat(route_mask, inputs.shape[2], axis=2)
 
-    mask = tf.math.greater_equal(route_index, route_index_lower)
-    mask = tf.logical_and(mask, tf.math.less(route_index, route_index_upper))
-    mask = tf.expand_dims(tf.expand_dims(mask, 1), 1)
-
-    return mask
+        x = tf.gather_nd(inputs, tf.where(route_mask == 1))
+        x = tf.reshape(x, [-1, inputs.shape[1], inputs.shape[2], route_width])
+        return x, routing_x

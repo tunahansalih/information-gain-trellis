@@ -1,8 +1,10 @@
+import os
+
 import numpy as np
 import tensorflow as tf
 
 from loss.information_gain import information_gain_loss_fn
-from nets.routing_layer import routing_block, routing_mask
+from nets.routing_layer import RoutingLayer
 from tqdm import tqdm
 from sklearn.model_selection import train_test_split
 
@@ -24,7 +26,9 @@ NUM_EPOCHS = 100
 BATCH_SIZE = 125
 USE_ROUTING = True
 LR_INITIAL = 0.01
-DROPOUT_RATE = 0.1
+DROPOUT_RATE = float(os.environ.get("DROPOUT_RATE", 0.1))
+NUM_ROUTES_0 = int(os.environ.get("NUM_ROUTES_0", 2))
+NUM_ROUTES_1 = int(os.environ.get("NUM_ROUTES_1", 4))
 
 (train_x, train_y), (test_x, test_y) = tf.keras.datasets.fashion_mnist.load_data()
 train_x = np.expand_dims(train_x, -1)
@@ -53,22 +57,14 @@ x = tf.keras.layers.ReLU()(x)
 x = tf.keras.layers.MaxPool2D((2, 2))(x)
 
 if USE_ROUTING:
-    routing_0 = routing_block(x, num_routes=4, stage=0)
-    routing_softmax_0 = tf.nn.softmax(routing_0)
-    mask_0 = routing_mask(routing_softmax_0, num_routes=4, feature_map_size=64)
-    x_masked_0 = x * tf.cast(mask_0, tf.float32)
-    x = x_masked_0
+    x, routing_0 = RoutingLayer(routes=NUM_ROUTES_0)(x)
 
 x = tf.keras.layers.Conv2D(128, (5, 5), padding="same")(x)
 x = tf.keras.layers.ReLU()(x)
 x = tf.keras.layers.MaxPool2D((2, 2))(x)
 
 if USE_ROUTING:
-    routing_1 = routing_block(x, num_routes=4, stage=1)
-    routing_softmax_1 = tf.nn.softmax(routing_1)
-    mask_1 = routing_mask(routing_softmax_1, num_routes=4, feature_map_size=128)
-    x_masked_1 = x * tf.cast(mask_1, tf.float32)
-    x = x_masked_1
+    x, routing_1 = RoutingLayer(routes=NUM_ROUTES_1)(x)
 
 x = tf.keras.layers.Flatten()(x)
 
