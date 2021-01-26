@@ -4,9 +4,24 @@ import numpy as np
 import tensorflow as tf
 
 from loss.information_gain import information_gain_loss_fn
-from nets.routing_layer import RoutingLayer
+from nets.routing_layer import InformationGainRoutingBlock, RandomRoutingBlock
 from tqdm import tqdm
-from sklearn.model_selection import train_test_split
+# from sklearn.model_selection import train_test_split
+
+import wandb
+
+config = dict(
+    # Model Parameters
+    NUM_EPOCHS=100,
+    BATCH_SIZE=125,
+    USE_ROUTING=True,
+    USE_RANDOM_ROUTING=False,
+    LR_INITIAL=0.01,
+    DROPOUT_RATE=float(os.environ.get("DROPOUT_RATE", 0.1)),
+    NUM_ROUTES_0=int(os.environ.get("NUM_ROUTES_0", 2)),
+    NUM_ROUTES_1=int(os.environ.get("NUM_ROUTES_1", 4))
+)
+wandb.init(project="information-gain-routing-network", entity="information-gain-routing-network", config=config)
 
 gpus = tf.config.experimental.list_physical_devices('GPU')
 if gpus:
@@ -22,14 +37,6 @@ if gpus:
 
 print("Num GPUs Available: ", len(tf.config.experimental.list_physical_devices('GPU')))
 
-NUM_EPOCHS = 100
-BATCH_SIZE = 125
-USE_ROUTING = True
-LR_INITIAL = 0.01
-DROPOUT_RATE = float(os.environ.get("DROPOUT_RATE", 0.1))
-NUM_ROUTES_0 = int(os.environ.get("NUM_ROUTES_0", 2))
-NUM_ROUTES_1 = int(os.environ.get("NUM_ROUTES_1", 4))
-
 (train_x, train_y), (test_x, test_y) = tf.keras.datasets.fashion_mnist.load_data()
 train_x = np.expand_dims(train_x, -1)
 test_x = np.expand_dims(test_x, -1)
@@ -42,9 +49,10 @@ test_y = tf.keras.utils.to_categorical(test_y, 10)
 
 # train_x, validation_x, train_y, validation_y = train_test_split(train_x, train_y, test_size=0.1)
 
-dataset_train = tf.data.Dataset.from_tensor_slices((train_x, train_y)).shuffle(1000, seed=5361).batch(BATCH_SIZE)
-dataset_validation = tf.data.Dataset.from_tensor_slices((test_x, test_y)).batch(BATCH_SIZE)
-dataset_test = tf.data.Dataset.from_tensor_slices((test_x, test_y)).batch(BATCH_SIZE)
+dataset_train = tf.data.Dataset.from_tensor_slices((train_x, train_y)).shuffle(60000, seed=5361).batch(
+    config["BATCH_SIZE"])
+dataset_validation = tf.data.Dataset.from_tensor_slices((test_x, test_y)).batch(config["BATCH_SIZE"])
+dataset_test = tf.data.Dataset.from_tensor_slices((test_x, test_y)).batch(config["BATCH_SIZE"])
 
 ### Model Definition
 input_img = tf.keras.layers.Input((28, 28, 1))
@@ -56,40 +64,44 @@ x = tf.keras.layers.Conv2D(64, (5, 5), padding="same")(x)
 x = tf.keras.layers.ReLU()(x)
 x = tf.keras.layers.MaxPool2D((2, 2))(x)
 
-if USE_ROUTING:
-    x, routing_0 = RoutingLayer(routes=NUM_ROUTES_0)(x)
+if config["USE_ROUTING"]:
+    x, routing_0 = InformationGainRoutingBlock(routes=config["NUM_ROUTES_0"], dropout_rate=config["DROPOUT_RATE"])(x)
+elif config["USE_RANDOM_ROUTING"]:
+    x, routing_0 = RandomRoutingBlock(routes=config["NUM_ROUTES_0"])(x)
 
 x = tf.keras.layers.Conv2D(128, (5, 5), padding="same")(x)
 x = tf.keras.layers.ReLU()(x)
 x = tf.keras.layers.MaxPool2D((2, 2))(x)
 
-if USE_ROUTING:
-    x, routing_1 = RoutingLayer(routes=NUM_ROUTES_1)(x)
+if config["USE_ROUTING"]:
+    x, routing_1 = InformationGainRoutingBlock(routes=config["NUM_ROUTES_1"], dropout_rate=config["DROPOUT_RATE"])(x)
+elif config["USE_RANDOM_ROUTING"]:
+    x, routing_1 = RandomRoutingBlock(routes=config["NUM_ROUTES_1"])(x)
 
 x = tf.keras.layers.Flatten()(x)
 
 x = tf.keras.layers.Dense(1024)(x)
 x = tf.keras.layers.ReLU()(x)
-x = tf.keras.layers.Dropout(DROPOUT_RATE)(x)
+x = tf.keras.layers.Dropout(config["DROPOUT_RATE"])(x)
 x = tf.keras.layers.Dense(512)(x)
 x = tf.keras.layers.ReLU()(x)
-x = tf.keras.layers.Dropout(DROPOUT_RATE)(x)
+x = tf.keras.layers.Dropout(config["DROPOUT_RATE"])(x)
 x = tf.keras.layers.Dense(10)(x)
 
-if USE_ROUTING:
+if config["USE_ROUTING"] or config["USE_RANDOM_ROUTING"]:
     model = tf.keras.models.Model(input_img, [routing_0, routing_1, x])
 else:
     model = tf.keras.models.Model(input_img, x)
 
 loss_fn = tf.losses.CategoricalCrossentropy(from_logits=True)
-optimizer = tf.optimizers.SGD(lr=LR_INITIAL, momentum=0.9)
+optimizer = tf.optimizers.SGD(lr=config["LR_INITIAL"], momentum=0.9)
 
 avg_accuracy = tf.keras.metrics.CategoricalAccuracy()
 avg_loss = tf.keras.metrics.Mean()
 
 tau = 25
 
-for epoch in range(NUM_EPOCHS):
+for epoch in range(config["NUM_EPOCHS"]):
     print(f"Epoch {epoch}")
     avg_accuracy.reset_states()
     avg_loss.reset_states()
@@ -98,13 +110,13 @@ for epoch in range(NUM_EPOCHS):
     for i, (x_batch_train, y_batch_train) in enumerate(pbar):
         step = epoch * (len(dataset_train)) + i
         if step == 15000:
-            tf.keras.backend.set_value(optimizer.learning_rate, LR_INITIAL / 2)
+            tf.keras.backend.set_value(optimizer.learning_rate, config["LR_INITIAL"] / 2)
         if step == 30000:
-            tf.keras.backend.set_value(optimizer.learning_rate, LR_INITIAL / 4)
+            tf.keras.backend.set_value(optimizer.learning_rate, config["LR_INITIAL"] / 4)
         if step == 40000:
-            tf.keras.backend.set_value(optimizer.learning_rate, LR_INITIAL / 40)
+            tf.keras.backend.set_value(optimizer.learning_rate, config["LR_INITIAL"] / 40)
         with tf.GradientTape() as tape:
-            if USE_ROUTING:
+            if config["USE_ROUTING"]:
                 route_0, route_1, logits = model(x_batch_train, training=True)
                 route_0 = tf.nn.softmax(route_0 / tau, axis=-1)
                 route_1 = tf.nn.softmax(route_1 / tau, axis=-1)
@@ -121,14 +133,16 @@ for epoch in range(NUM_EPOCHS):
         avg_loss.update_state(loss_value)
         pbar.set_description(
             f"Training Accuracy: %{avg_accuracy.result().numpy() * 100:.2f} Loss: {avg_loss.result().numpy():.5f}")
-
+        wandb.log({"Training/Loss": avg_loss.result().numpy(),
+                   "Training/Accuracy": avg_accuracy.result().numpy(),
+                   "Training/SoftmaxSmoothing": tau}, step=step)
         if step % 2 == 1:
             tau = tau * 0.9999
 
     avg_accuracy.reset_states()
     pbar = tqdm(dataset_validation)
     for (x_batch_val, y_batch_val) in pbar:
-        if USE_ROUTING:
+        if config["USE_ROUTING"] or config["USE_RANDOM_ROUTING"]:
             route_0, route_1, logits = model(x_batch_val, training=False)
         else:
             logits = model(x_batch_val, training=False)
@@ -136,12 +150,13 @@ for epoch in range(NUM_EPOCHS):
 
         pbar.set_description(
             f"Validation Accuracy: %{avg_accuracy.result().numpy() * 100:.2f}")
+    wandb.log({"Epoch": epoch, "Validation/Accuracy": avg_accuracy.result().numpy()}, step=step)
 
 avg_accuracy.reset_states()
 pbar = tqdm(dataset_test)
 
 for (x_batch_test, y_batch_test) in pbar:
-    if USE_ROUTING:
+    if config["USE_ROUTING"] or config["USE_RANDOM_ROUTING"]:
         route_0, route_1, logits = model(x_batch_test, training=False)
     else:
         logits = model(x_batch_test, training=False)
@@ -149,3 +164,5 @@ for (x_batch_test, y_batch_test) in pbar:
 
     pbar.set_description(
         f"Test Accuracy: %{avg_accuracy.result().numpy() * 100:.2f}")
+
+wandb.log({"Test/Accuracy": avg_accuracy.result().numpy()})
