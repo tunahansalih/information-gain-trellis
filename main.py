@@ -14,12 +14,15 @@ config = dict(
     # Model Parameters
     NUM_EPOCHS=100,
     BATCH_SIZE=125,
-    USE_ROUTING=True,
+    USE_ROUTING=False,
     USE_RANDOM_ROUTING=False,
     LR_INITIAL=0.01,
     DROPOUT_RATE=float(os.environ.get("DROPOUT_RATE", 0.1)),
     NUM_ROUTES_0=int(os.environ.get("NUM_ROUTES_0", 2)),
-    NUM_ROUTES_1=int(os.environ.get("NUM_ROUTES_1", 4))
+    NUM_ROUTES_1=int(os.environ.get("NUM_ROUTES_1", 4)),
+    CNN_0=32,
+    CNN_1=64,
+    CNN_2=128
 )
 wandb.init(project="information-gain-routing-network", entity="information-gain-routing-network", config=config)
 
@@ -56,11 +59,11 @@ dataset_test = tf.data.Dataset.from_tensor_slices((test_x, test_y)).batch(config
 
 ### Model Definition
 input_img = tf.keras.layers.Input((28, 28, 1))
-x = tf.keras.layers.Conv2D(32, (5, 5), padding="same")(input_img)
+x = tf.keras.layers.Conv2D(config["CNN_0"], (5, 5), padding="same")(input_img)
 x = tf.keras.layers.ReLU()(x)
 x = tf.keras.layers.MaxPool2D((2, 2))(x)
 
-x = tf.keras.layers.Conv2D(64, (5, 5), padding="same")(x)
+x = tf.keras.layers.Conv2D(config["CNN_1"], (5, 5), padding="same")(x)
 x = tf.keras.layers.ReLU()(x)
 x = tf.keras.layers.MaxPool2D((2, 2))(x)
 
@@ -69,7 +72,7 @@ if config["USE_ROUTING"]:
 elif config["USE_RANDOM_ROUTING"]:
     x, routing_0 = RandomRoutingBlock(routes=config["NUM_ROUTES_0"])(x)
 
-x = tf.keras.layers.Conv2D(128, (5, 5), padding="same")(x)
+x = tf.keras.layers.Conv2D(config["CNN_2"], (5, 5), padding="same")(x)
 x = tf.keras.layers.ReLU()(x)
 x = tf.keras.layers.MaxPool2D((2, 2))(x)
 
@@ -123,6 +126,9 @@ for epoch in range(config["NUM_EPOCHS"]):
                 loss_value = loss_fn(y_batch_train, logits)
                 loss_value += information_gain_loss_fn(y_batch_train, route_0, balance_coefficient=5.0)
                 loss_value += information_gain_loss_fn(y_batch_train, route_1, balance_coefficient=5.0)
+            elif config["USE_RANDOM_ROUTING"]:
+                route_0, route_1, logits = model(x_batch_train, training=True)
+                loss_value = loss_fn(y_batch_train, logits)
             else:
                 logits = model(x_batch_train, training=True)
                 loss_value = loss_fn(y_batch_train, logits)
@@ -135,7 +141,8 @@ for epoch in range(config["NUM_EPOCHS"]):
             f"Training Accuracy: %{avg_accuracy.result().numpy() * 100:.2f} Loss: {avg_loss.result().numpy():.5f}")
         wandb.log({"Training/Loss": avg_loss.result().numpy(),
                    "Training/Accuracy": avg_accuracy.result().numpy(),
-                   "Training/SoftmaxSmoothing": tau}, step=step)
+                   "Training/SoftmaxSmoothing": tau,
+                   "Training/LearningRate": optimizer.lr.numpy()}, step=step)
         if step % 2 == 1:
             tau = tau * 0.9999
 

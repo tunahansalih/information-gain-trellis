@@ -28,7 +28,7 @@ class RandomRoutingBlock(RoutingBlock):
         super(RandomRoutingBlock, self).__init__(routes=routes)
 
     def call(self, inputs, is_training=True):
-        routing_x = tf.random.uniform([inputs.shape[0], self.routes])
+        routing_x = tf.random.uniform([tf.shape(inputs)[0], self.routes])
 
         x = self.choose_route(inputs, routing_x)
         return x, routing_x
@@ -37,19 +37,19 @@ class RandomRoutingBlock(RoutingBlock):
 class InformationGainRoutingBlock(RoutingBlock):
     def __init__(self, routes, dropout_rate):
         super(InformationGainRoutingBlock, self).__init__(routes=routes)
-        
+
         self.dropout_rate = dropout_rate
 
         self.conv = layers.Conv2D(64, (3, 3), (2, 2), padding='same')
         self.flatten = layers.GlobalAveragePooling2D()
-        self.dropout = layers.Dropout(self.dropout_rate)
+        # self.dropout = layers.Dropout(self.dropout_rate)
         self.fc = layers.Dense(routes, activation=None)
 
     def call(self, inputs, training=None):
         routing_x = self.conv(inputs)
         routing_x = self.flatten(routing_x)
-        if training:
-            routing_x = self.dropout(routing_x)
+        # if training:
+        #     routing_x = self.dropout(routing_x)
         routing_x = self.fc(routing_x)
 
         x = self.choose_route(inputs, routing_x)
