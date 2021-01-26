@@ -12,6 +12,8 @@ import wandb
 
 config = dict(
     # Model Parameters
+    # DATASET="fashion_mnist",
+    DATASET="cifar100",
     NUM_EPOCHS=100,
     BATCH_SIZE=125,
     USE_ROUTING=False,
@@ -40,15 +42,23 @@ if gpus:
 
 print("Num GPUs Available: ", len(tf.config.experimental.list_physical_devices('GPU')))
 
-(train_x, train_y), (test_x, test_y) = tf.keras.datasets.fashion_mnist.load_data()
-train_x = np.expand_dims(train_x, -1)
-test_x = np.expand_dims(test_x, -1)
+if config["DATASET"] == "fashion_mnist":
+    (train_x, train_y), (test_x, test_y) = tf.keras.datasets.fashion_mnist.load_data()
+    train_x = np.expand_dims(train_x, -1)
+    test_x = np.expand_dims(test_x, -1)
+    input_img = tf.keras.layers.Input((28, 28, 1))
+    NUM_CLASSES = 10
+
+elif config["DATASET"] == "cifar100":
+    (train_x, train_y), (test_x, test_y) = tf.keras.datasets.cifar100.load_data()
+    input_img = tf.keras.layers.Input((32, 32, 3))
+    NUM_CLASSES = 100
 
 train_x = train_x / 255.0
 test_x = test_x / 255.0
 
-train_y = tf.keras.utils.to_categorical(train_y, 10)
-test_y = tf.keras.utils.to_categorical(test_y, 10)
+train_y = tf.keras.utils.to_categorical(train_y, NUM_CLASSES)
+test_y = tf.keras.utils.to_categorical(test_y, NUM_CLASSES)
 
 # train_x, validation_x, train_y, validation_y = train_test_split(train_x, train_y, test_size=0.1)
 
@@ -58,7 +68,6 @@ dataset_validation = tf.data.Dataset.from_tensor_slices((test_x, test_y)).batch(
 dataset_test = tf.data.Dataset.from_tensor_slices((test_x, test_y)).batch(config["BATCH_SIZE"])
 
 ### Model Definition
-input_img = tf.keras.layers.Input((28, 28, 1))
 x = tf.keras.layers.Conv2D(config["CNN_0"], (5, 5), padding="same")(input_img)
 x = tf.keras.layers.ReLU()(x)
 x = tf.keras.layers.MaxPool2D((2, 2))(x)
@@ -89,7 +98,7 @@ x = tf.keras.layers.Dropout(config["DROPOUT_RATE"])(x)
 x = tf.keras.layers.Dense(512)(x)
 x = tf.keras.layers.ReLU()(x)
 x = tf.keras.layers.Dropout(config["DROPOUT_RATE"])(x)
-x = tf.keras.layers.Dense(10)(x)
+x = tf.keras.layers.Dense(NUM_CLASSES)(x)
 
 if config["USE_ROUTING"] or config["USE_RANDOM_ROUTING"]:
     model = tf.keras.models.Model(input_img, [routing_0, routing_1, x])
