@@ -94,6 +94,7 @@ def reset_metrics(metrics):
             metric_route.reset_states()
 
 
+step = 0
 for epoch in range(config["NUM_EPOCHS"]):
     print(f"Epoch {epoch}")
 
@@ -102,7 +103,7 @@ for epoch in range(config["NUM_EPOCHS"]):
     pbar = tqdm(dataset_train)
 
     for i, (x_batch_train, y_batch_train) in enumerate(pbar):
-        step = epoch * (len(dataset_train)) + i
+        step += 1
         if step == 15000:
             tf.keras.backend.set_value(optimizer.learning_rate, config["LR_INITIAL"] / 2)
         if step == 30000:
