@@ -39,14 +39,15 @@ class InformationGainRoutingBlock(RoutingBlock):
         super(InformationGainRoutingBlock, self).__init__(routes=routes)
 
         self.dropout_rate = dropout_rate
-
+        self.batch_norm = layers.BatchNormalization()
         self.conv = layers.Conv2D(64, (3, 3), (2, 2), padding='same')
         self.flatten = layers.GlobalAveragePooling2D()
         # self.dropout = layers.Dropout(self.dropout_rate)
         self.fc = layers.Dense(routes, activation=None)
 
     def call(self, inputs, training=None):
-        routing_x = self.conv(inputs)
+        routing_x = self.batch_norm(inputs)
+        routing_x = self.conv(routing_x)
         routing_x = self.flatten(routing_x)
         # if training:
         #     routing_x = self.dropout(routing_x)

@@ -4,7 +4,7 @@ import numpy as np
 import tensorflow as tf
 
 from loss.information_gain import information_gain_loss_fn
-from nets.routing_layer import InformationGainRoutingBlock, RandomRoutingBlock
+from nets.routing import InformationGainRoutingBlock, RandomRoutingBlock
 from tqdm import tqdm
 # from sklearn.model_selection import train_test_split
 
@@ -12,11 +12,11 @@ import wandb
 
 config = dict(
     # Model Parameters
-    # DATASET="fashion_mnist",
-    DATASET="cifar100",
+    DATASET="fashion_mnist",
+    # DATASET="cifar100",
     NUM_EPOCHS=100,
     BATCH_SIZE=125,
-    USE_ROUTING=False,
+    USE_ROUTING=True,
     USE_RANDOM_ROUTING=False,
     LR_INITIAL=0.01,
     DROPOUT_RATE=float(os.environ.get("DROPOUT_RATE", 0.1)),
@@ -110,13 +110,25 @@ optimizer = tf.optimizers.SGD(lr=config["LR_INITIAL"], momentum=0.9)
 
 avg_accuracy = tf.keras.metrics.CategoricalAccuracy()
 avg_loss = tf.keras.metrics.Mean()
+avg_routing_0_loss = tf.keras.metrics.Mean()
+avg_routing_1_loss = tf.keras.metrics.Mean()
+avg_classification_loss = tf.keras.metrics.Mean()
 
 tau = 25
+
+avg_route_0_probs = []
+avg_route_1_probs = []
+for c in range(NUM_CLASSES):
+    avg_route_0_probs.append(tf.keras.metrics.MeanTensor())
+    avg_route_1_probs.append(tf.keras.metrics.MeanTensor())
 
 for epoch in range(config["NUM_EPOCHS"]):
     print(f"Epoch {epoch}")
     avg_accuracy.reset_states()
     avg_loss.reset_states()
+    avg_routing_0_loss.reset_states()
+    avg_routing_1_loss.reset_states()
+    avg_classification_loss.reset_states()
     pbar = tqdm(dataset_train)
 
     for i, (x_batch_train, y_batch_train) in enumerate(pbar):
@@ -127,28 +139,41 @@ for epoch in range(config["NUM_EPOCHS"]):
             tf.keras.backend.set_value(optimizer.learning_rate, config["LR_INITIAL"] / 4)
         if step == 40000:
             tf.keras.backend.set_value(optimizer.learning_rate, config["LR_INITIAL"] / 40)
+        classification_loss = 0
+        routing_0_loss = 0
+        routing_1_loss = 0
         with tf.GradientTape() as tape:
+
             if config["USE_ROUTING"]:
                 route_0, route_1, logits = model(x_batch_train, training=True)
                 route_0 = tf.nn.softmax(route_0 / tau, axis=-1)
                 route_1 = tf.nn.softmax(route_1 / tau, axis=-1)
-                loss_value = loss_fn(y_batch_train, logits)
-                loss_value += information_gain_loss_fn(y_batch_train, route_0, balance_coefficient=5.0)
-                loss_value += information_gain_loss_fn(y_batch_train, route_1, balance_coefficient=5.0)
+                classification_loss = loss_fn(y_batch_train, logits)
+                routing_0_loss = information_gain_loss_fn(y_batch_train, route_0, balance_coefficient=5.0)
+                routing_1_loss = information_gain_loss_fn(y_batch_train, route_1, balance_coefficient=5.0)
             elif config["USE_RANDOM_ROUTING"]:
                 route_0, route_1, logits = model(x_batch_train, training=True)
-                loss_value = loss_fn(y_batch_train, logits)
+                classification_loss = loss_fn(y_batch_train, logits)
             else:
                 logits = model(x_batch_train, training=True)
-                loss_value = loss_fn(y_batch_train, logits)
-
+                classification_loss = loss_fn(y_batch_train, logits)
+            loss_value = classification_loss + routing_0_loss + routing_1_loss
         grads = tape.gradient(loss_value, model.trainable_weights)
         optimizer.apply_gradients(zip(grads, model.trainable_weights))
+        # Update Metrics
         avg_accuracy.update_state(y_batch_train, logits)
         avg_loss.update_state(loss_value)
+        avg_routing_0_loss.update_state(routing_0_loss)
+        avg_routing_1_loss.update_state(routing_1_loss)
+        avg_classification_loss.update_state(classification_loss)
         pbar.set_description(
             f"Training Accuracy: %{avg_accuracy.result().numpy() * 100:.2f} Loss: {avg_loss.result().numpy():.5f}")
+
+        # Log metrics
         wandb.log({"Training/Loss": avg_loss.result().numpy(),
+                   "Training/ClassificationLoss": avg_classification_loss.result().numpy(),
+                   "Training/Routing_0_Loss": avg_routing_0_loss.result().numpy(),
+                   "Training/Routing_1_Loss": avg_routing_1_loss.result().numpy(),
                    "Training/Accuracy": avg_accuracy.result().numpy(),
                    "Training/SoftmaxSmoothing": tau,
                    "Training/LearningRate": optimizer.lr.numpy()}, step=step)
@@ -157,28 +182,73 @@ for epoch in range(config["NUM_EPOCHS"]):
 
     avg_accuracy.reset_states()
     pbar = tqdm(dataset_validation)
+    for c in range(NUM_CLASSES):
+        avg_route_0_probs[c].reset_states()
+        avg_route_1_probs[c].reset_states()
     for (x_batch_val, y_batch_val) in pbar:
         if config["USE_ROUTING"] or config["USE_RANDOM_ROUTING"]:
             route_0, route_1, logits = model(x_batch_val, training=False)
+            route_0 = tf.nn.softmax(route_0, axis=-1)
+            route_1 = tf.nn.softmax(route_1, axis=-1)
+            for y, r_0, r_1 in zip(y_batch_val, route_0, route_1):
+                c = np.argmax(y)
+                avg_route_0_probs[c].update_state(r_0)
+                avg_route_1_probs[c].update_state(r_1)
         else:
             logits = model(x_batch_val, training=False)
         avg_accuracy.update_state(y_batch_val, logits)
 
         pbar.set_description(
             f"Validation Accuracy: %{avg_accuracy.result().numpy() * 100:.2f}")
-    wandb.log({"Epoch": epoch, "Validation/Accuracy": avg_accuracy.result().numpy()}, step=step)
+    result_log = {}
+    for c, route_0_avg, route_1_avg in zip(range(NUM_CLASSES), avg_route_0_probs, avg_route_1_probs):
+        data = [[label, val] for (label, val) in enumerate(avg_route_0_probs[c].result().numpy())]
+        table = wandb.Table(data=data, columns=["route", "prob"])
+        result_log[f"Validation/Route_0/Class_{c}"] = wandb.plot.bar(table, "route", "prob",
+                                                                     title=f"Route 0 Probabilities For Class {c}")
+
+        data = [[label, val] for (label, val) in enumerate(avg_route_1_probs[c].result().numpy())]
+        table = wandb.Table(data=data, columns=["route", "prob"])
+        result_log[f"Validation/Route_1/Class_{c}"] = wandb.plot.bar(table, "route", "prob",
+                                                                     title=f"Route 1 Probabilities For Class {c}")
+
+    result_log["Epoch"] = epoch
+    result_log["Validation/Accuracy"] = avg_accuracy.result().numpy()
+    wandb.log(result_log, step=step)
 
 avg_accuracy.reset_states()
-pbar = tqdm(dataset_test)
+pbar = tqdm(dataset_validation)
+for c in range(NUM_CLASSES):
+    avg_route_0_probs[c].reset_states()
+avg_route_1_probs[c].reset_states()
 
 for (x_batch_test, y_batch_test) in pbar:
     if config["USE_ROUTING"] or config["USE_RANDOM_ROUTING"]:
         route_0, route_1, logits = model(x_batch_test, training=False)
+        route_0 = tf.nn.softmax(route_0)
+        route_1 = tf.nn.softmax(route_1)
+        for y_batch in zip(y_batch_test, route_0, route_1):
+            c = np.argmax(y_batch)
+        avg_route_0_probs[c].update_state(route_0)
+        avg_route_1_probs[c].update_state(route_1)
     else:
         logits = model(x_batch_test, training=False)
-    avg_accuracy.update_state(y_batch_test, logits)
+        avg_accuracy.update_state(y_batch_test, logits)
 
-    pbar.set_description(
-        f"Test Accuracy: %{avg_accuracy.result().numpy() * 100:.2f}")
+pbar.set_description(
+    f"Test Accuracy: %{avg_accuracy.result().numpy() * 100:.2f}")
+result_log = {}
+for c, route_0_avg, route_1_avg in zip(range(NUM_CLASSES), avg_route_0_probs, avg_route_1_probs):
+    data = [[label, val] for (label, val) in
+            zip(range(config["NUM_ROUTES_0"]), avg_route_0_probs[c].result().numpy())]
+    table = wandb.Table(data=data, columns=["route", "prob"])
+    result_log[f"Validation/Route_0/Class_{c}"] = wandb.plot.bar(table, "route", "prob",
+                                                                 title="Route Probabilities")
 
-wandb.log({"Test/Accuracy": avg_accuracy.result().numpy()})
+    data = [[label, val] for (label, val) in
+            zip(range(config["NUM_ROUTES_0"]), avg_route_1_probs[c].result().numpy())]
+    table = wandb.Table(data=data, columns=["route", "prob"])
+    result_log[f"Validation/Route_1/Class_{c}"] = wandb.plot.bar(table, "route", "prob",
+                                                                 title="Route Probabilities")
+result_log["Test/Accuracy"] = avg_accuracy.result().numpy()
+wandb.log(result_log, step=step)
