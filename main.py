@@ -122,6 +122,7 @@ for c in range(NUM_CLASSES):
     avg_route_0_probs.append(tf.keras.metrics.MeanTensor())
     avg_route_1_probs.append(tf.keras.metrics.MeanTensor())
 
+step = 0
 for epoch in range(config["NUM_EPOCHS"]):
     print(f"Epoch {epoch}")
     avg_accuracy.reset_states()
@@ -132,7 +133,7 @@ for epoch in range(config["NUM_EPOCHS"]):
     pbar = tqdm(dataset_train)
 
     for i, (x_batch_train, y_batch_train) in enumerate(pbar):
-        step = epoch * (len(dataset_train)) + i
+        step += 1
         if step == 15000:
             tf.keras.backend.set_value(optimizer.learning_rate, config["LR_INITIAL"] / 2)
         if step == 30000:
@@ -220,23 +221,23 @@ avg_accuracy.reset_states()
 pbar = tqdm(dataset_validation)
 for c in range(NUM_CLASSES):
     avg_route_0_probs[c].reset_states()
-avg_route_1_probs[c].reset_states()
+    avg_route_1_probs[c].reset_states()
 
 for (x_batch_test, y_batch_test) in pbar:
     if config["USE_ROUTING"] or config["USE_RANDOM_ROUTING"]:
         route_0, route_1, logits = model(x_batch_test, training=False)
         route_0 = tf.nn.softmax(route_0)
         route_1 = tf.nn.softmax(route_1)
-        for y_batch in zip(y_batch_test, route_0, route_1):
-            c = np.argmax(y_batch)
-        avg_route_0_probs[c].update_state(route_0)
-        avg_route_1_probs[c].update_state(route_1)
+        for y, r_0, r_1h in zip(y_batch_test, route_0, route_1):
+            c = np.argmax(y)
+            avg_route_0_probs[c].update_state(r_0)
+            avg_route_1_probs[c].update_state(r_1)
     else:
         logits = model(x_batch_test, training=False)
-        avg_accuracy.update_state(y_batch_test, logits)
+    avg_accuracy.update_state(y_batch_test, logits)
 
-pbar.set_description(
-    f"Test Accuracy: %{avg_accuracy.result().numpy() * 100:.2f}")
+    pbar.set_description(
+        f"Test Accuracy: %{avg_accuracy.result().numpy() * 100:.2f}")
 result_log = {}
 for c, route_0_avg, route_1_avg in zip(range(NUM_CLASSES), avg_route_0_probs, avg_route_1_probs):
     data = [[label, val] for (label, val) in
