@@ -156,7 +156,7 @@ for epoch in range(config["NUM_EPOCHS"]):
     reset_metrics(metrics)
     pbar = tqdm(dataset_validation)
     for (x_batch_val, y_batch_val) in pbar:
-        route_0, route_1, logits = model(x_batch_val, training=False)
+        route_0, route_1, logits = model(x_batch_val, routing=current_routing, training=False)
         if current_routing in [Routing.RANDOM_ROUTING, Routing.INFORMATION_GAIN_ROUTING]:
             route_0 = tf.nn.softmax(route_0, axis=-1)
             route_1 = tf.nn.softmax(route_1, axis=-1)
