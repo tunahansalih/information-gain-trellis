@@ -4,8 +4,8 @@ import numpy as np
 import tensorflow as tf
 
 from loss.information_gain import information_gain_loss_fn
-from nets.routing import InformationGainRoutingBlock, RandomRoutingBlock
-from nets.model import get_model
+from nets.layer import InformationGainRoutingBlock, RandomRoutingBlock
+from nets.model import InformationGainRoutingModel, Routing
 from tqdm import tqdm
 # from sklearn.model_selection import train_test_split
 
@@ -70,7 +70,7 @@ dataset_train = tf.data.Dataset.from_tensor_slices((train_x, train_y)).shuffle(6
 dataset_validation = tf.data.Dataset.from_tensor_slices((test_x, test_y)).batch(config["BATCH_SIZE"])
 dataset_test = tf.data.Dataset.from_tensor_slices((test_x, test_y)).batch(config["BATCH_SIZE"])
 
-model = get_model(input_img, config)
+model = InformationGainRoutingModel(input_img, config)
 
 loss_fn = tf.losses.CategoricalCrossentropy(from_logits=True)
 optimizer = tf.optimizers.SGD(lr=config["LR_INITIAL"], momentum=0.9)
@@ -95,6 +95,8 @@ def reset_metrics(metrics):
 
 
 step = 0
+current_routing = Routing.INFORMATION_GAIN_ROUTING
+
 for epoch in range(config["NUM_EPOCHS"]):
     print(f"Epoch {epoch}")
 
@@ -115,21 +117,14 @@ for epoch in range(config["NUM_EPOCHS"]):
         routing_0_loss = 0
         routing_1_loss = 0
         with tf.GradientTape() as tape:
+            route_0, route_1, logits = model(x_batch_train, routing=current_routing, is_training=True)
+            classification_loss = loss_fn(y_batch_train, logits)
 
-            if config["USE_ROUTING"]:
-                route_0, route_1, logits = model(x_batch_train, training=True)
+            if current_routing == Routing.INFORMATION_GAIN_ROUTING:
                 route_0 = tf.nn.softmax(route_0 / tau, axis=-1)
                 route_1 = tf.nn.softmax(route_1 / tau, axis=-1)
-                classification_loss = loss_fn(y_batch_train, logits)
                 routing_0_loss = information_gain_loss_fn(y_batch_train, route_0, balance_coefficient=5.0)
                 routing_1_loss = information_gain_loss_fn(y_batch_train, route_1, balance_coefficient=5.0)
-            elif config["USE_RANDOM_ROUTING"]:
-                route_0, route_1, logits = model(x_batch_train, training=True)
-                classification_loss = loss_fn(y_batch_train, logits)
-            else:
-                logits = model(x_batch_train, training=True)
-                classification_loss = loss_fn(y_batch_train, logits)
-
             loss_value = classification_loss + routing_0_loss + routing_1_loss
         grads = tape.gradient(loss_value, model.trainable_weights)
         optimizer.apply_gradients(zip(grads, model.trainable_weights))
@@ -149,7 +144,8 @@ for epoch in range(config["NUM_EPOCHS"]):
                    "Training/Routing_1_Loss": metrics["Routing1Loss"].result().numpy(),
                    "Training/Accuracy": metrics["Accuracy"].result().numpy(),
                    "Training/SoftmaxSmoothing": tau,
-                   "Training/LearningRate": optimizer.lr.numpy()}, step=step)
+                   "Training/LearningRate": optimizer.lr.numpy(),
+                   "Training/Routing": current_routing.name}, step=step)
         pbar.set_description(
             f"Training Accuracy: %{metrics['Accuracy'].result().numpy() * 100:.2f} Loss: {metrics['TotalLoss'].result().numpy():.5f}")
 
@@ -160,16 +156,14 @@ for epoch in range(config["NUM_EPOCHS"]):
     reset_metrics(metrics)
     pbar = tqdm(dataset_validation)
     for (x_batch_val, y_batch_val) in pbar:
-        if config["USE_ROUTING"] or config["USE_RANDOM_ROUTING"]:
-            route_0, route_1, logits = model(x_batch_val, training=False)
+        route_0, route_1, logits = model(x_batch_val, training=False)
+        if current_routing in [Routing.RANDOM_ROUTING, Routing.INFORMATION_GAIN_ROUTING]:
             route_0 = tf.nn.softmax(route_0, axis=-1)
             route_1 = tf.nn.softmax(route_1, axis=-1)
             y_batch_val_index = tf.argmax(y_batch_val, axis=-1)
             for c, r_0, r_1 in zip(y_batch_val_index, route_0, route_1):
                 metrics["Route0"][c].update_state(r_0)
                 metrics["Route1"][c].update_state(r_1)
-        else:
-            logits = model(x_batch_val, training=False)
 
         metrics["Accuracy"].update_state(y_batch_val, logits)
 
