@@ -67,6 +67,7 @@ class InformationGainRoutingBlock(layers.Layer):
 
 class RoutingMaskLayer(layers.Layer):
     def __init__(self, routes):
+        super(RoutingMaskLayer, self).__init__()
         self.routes = routes
 
     def __call__(self, inputs, routing_inputs):
