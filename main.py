@@ -27,7 +27,9 @@ config = dict(
     CNN_1=64,
     CNN_2=128,
     TAU_INITIAL=25,
-    TAU_DECAY_RATE=0.9999
+    TAU_DECAY_RATE=0.9999,
+    NO_ROUTING_STEPS=int(os.environ.get("NO_ROUTING_STEPS", None)),
+    RANDOM_ROUTING_STEPS=int(os.environ.get("RANDOM_ROUTING_STEPS", None))
 )
 wandb.init(project="information-gain-routing-network", entity="information-gain-routing-network", config=config)
 
@@ -95,7 +97,13 @@ def reset_metrics(metrics):
 
 
 step = 0
-current_routing = Routing.INFORMATION_GAIN_ROUTING
+
+if config["NO_ROUTING_STEPS"] is not None:
+    current_routing = Routing.NO_ROUTING
+elif config["RANDOM_ROUTING_STEPS"] is not None:
+    current_routing = Routing.RANDOM_ROUTING
+else:
+    current_routing = Routing.INFORMATION_GAIN_ROUTING
 
 for epoch in range(config["NUM_EPOCHS"]):
     print(f"Epoch {epoch}")
@@ -106,12 +114,18 @@ for epoch in range(config["NUM_EPOCHS"]):
 
     for i, (x_batch_train, y_batch_train) in enumerate(pbar):
         step += 1
+
+        # Update Learning Rate
         if step == 15000:
             tf.keras.backend.set_value(optimizer.learning_rate, config["LR_INITIAL"] / 2)
         if step == 30000:
             tf.keras.backend.set_value(optimizer.learning_rate, config["LR_INITIAL"] / 4)
         if step == 40000:
             tf.keras.backend.set_value(optimizer.learning_rate, config["LR_INITIAL"] / 40)
+
+        # Update routing method
+        if step == config["NO_ROUTING_STEPS"] or step == config["RANDOM_ROUTING_STEPS"]:
+            current_routing = Routing.INFORMATION_GAIN_ROUTING
 
         classification_loss = 0
         routing_0_loss = 0
