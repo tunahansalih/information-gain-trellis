@@ -53,14 +53,14 @@ class InformationGainRoutingBlock(layers.Layer):
         super(InformationGainRoutingBlock, self).__init__()
         self.routes = routes
         self.batch_norm = layers.BatchNormalization()
+        self.conv = layers.Conv2D(32, (3, 3), (2, 2))
         self.flatten = layers.GlobalAveragePooling2D()
-        self.fc = layers.Dense(64)
         self.routing = layers.Dense(routes, activation=None)
 
     def call(self, inputs):
         x = self.batch_norm(inputs)
+        x = self.conv(x)
         x = self.flatten(x)
-        x = self.fc(x)
         x = self.routing(x)
         return x
 
@@ -83,7 +83,6 @@ class RoutingMaskLayer(layers.Layer):
         x = tf.reshape(tf.boolean_mask(x, route_mask), [input_shape[0], route_width, input_shape[1], input_shape[2]])
         x = tf.transpose(x, [0, 2, 3, 1])
         return x
-
 
 
 def sample_gumbel(shape, eps=1e-20):
