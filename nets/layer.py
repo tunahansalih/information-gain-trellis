@@ -53,7 +53,7 @@ class InformationGainRoutingBlock(layers.Layer):
         super(InformationGainRoutingBlock, self).__init__()
         self.routes = routes
         self.batch_norm = layers.BatchNormalization()
-        self.conv = layers.Conv2D(32, (3, 3), (2, 2))
+        self.conv = layers.Conv2D(32, (3, 3), (2, 2), padding="same")
         self.flatten = layers.GlobalAveragePooling2D()
         self.routing = layers.Dense(routes, activation=None)
 
