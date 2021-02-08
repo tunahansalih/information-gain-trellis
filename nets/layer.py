@@ -18,26 +18,6 @@ class ConvolutionalBlock(layers.Layer):
         return x
 
 
-class RoutingBlock(layers.Layer):
-    def __init__(self, routes):
-        super(RoutingBlock, self).__init__()
-        self.routes = routes
-
-    def call(self):
-        raise NotImplementedError()
-
-    def choose_route(self, inputs, routing_x):
-        route_width = int(inputs.shape[-1] / self.routes)
-        route = tf.argmax(routing_x, axis=-1)
-        route = tf.one_hot(route, depth=self.routes)
-        route_mask = tf.expand_dims(tf.expand_dims(tf.repeat(route, route_width, axis=1), axis=1), axis=1)
-        route_mask = tf.repeat(route_mask, inputs.shape[1], axis=1)
-        route_mask = tf.repeat(route_mask, inputs.shape[2], axis=2)
-        x = tf.gather_nd(inputs, tf.where(route_mask == 1))
-        x = tf.reshape(x, [-1, inputs.shape[1], inputs.shape[2], route_width])
-        return x
-
-
 class RandomRoutingBlock(layers.Layer):
     def __init__(self, routes):
         super(RandomRoutingBlock, self).__init__()
@@ -49,18 +29,21 @@ class RandomRoutingBlock(layers.Layer):
 
 
 class InformationGainRoutingBlock(layers.Layer):
-    def __init__(self, routes):
+    def __init__(self, routes, dropout_rate=0.0):
         super(InformationGainRoutingBlock, self).__init__()
         self.routes = routes
         self.batch_norm = layers.BatchNormalization()
-        self.conv = layers.Conv2D(32, (3, 3), (2, 2), padding="same")
         self.flatten = layers.GlobalAveragePooling2D()
+        self.fc0 = layers.Dense(64, activation=tf.nn.relu)
+        self.dropout = layers.Dropout(dropout_rate)
         self.routing = layers.Dense(routes, activation=None)
 
-    def call(self, inputs):
+    def call(self, inputs, is_training=True):
         x = self.batch_norm(inputs)
-        x = self.conv(x)
         x = self.flatten(x)
+        x = self.fc0(x)
+        if is_training:
+            x = self.dropout(x)
         x = self.routing(x)
         return x
 

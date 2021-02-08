@@ -16,12 +16,14 @@ class InformationGainRoutingModel(tf.keras.models.Model):
         super(InformationGainRoutingModel, self).__init__()
 
         self.conv_block_0 = ConvolutionalBlock(filters=config["CNN_0"], kernel_size=(5, 5), padding="same")
-        self.routing_block_0 = InformationGainRoutingBlock(routes=config["NUM_ROUTES_0"])
+        self.routing_block_0 = InformationGainRoutingBlock(routes=config["NUM_ROUTES_0"],
+                                                           dropout_rate=config["DROPOUT_RATE"])
         self.random_routing_block_0 = RandomRoutingBlock(routes=config["NUM_ROUTES_0"])
         self.routing_mask_layer_0 = RoutingMaskLayer(routes=config["NUM_ROUTES_0"])
 
         self.conv_block_1 = ConvolutionalBlock(filters=config["CNN_1"], kernel_size=(5, 5), padding="same")
-        self.routing_block_1 = InformationGainRoutingBlock(routes=config["NUM_ROUTES_1"])
+        self.routing_block_1 = InformationGainRoutingBlock(routes=config["NUM_ROUTES_1"],
+                                                           dropout_rate=config["DROPOUT_RATE"])
         self.random_routing_block_1 = RandomRoutingBlock(routes=config["NUM_ROUTES_1"])
         self.routing_mask_layer_1 = RoutingMaskLayer(routes=config["NUM_ROUTES_1"])
 
@@ -40,7 +42,7 @@ class InformationGainRoutingModel(tf.keras.models.Model):
         if routing == Routing.RANDOM_ROUTING:
             routing_0 = self.random_routing_block_0(x)
         elif routing == Routing.INFORMATION_GAIN_ROUTING:
-            routing_0 = self.routing_block_0(x)
+            routing_0 = self.routing_block_0(x, is_training=is_training)
         elif routing == Routing.NO_ROUTING:
             routing_0 = None
         else:
@@ -53,7 +55,7 @@ class InformationGainRoutingModel(tf.keras.models.Model):
         if routing == Routing.RANDOM_ROUTING:
             routing_1 = self.random_routing_block_1(x)
         elif routing == Routing.INFORMATION_GAIN_ROUTING:
-            routing_1 = self.routing_block_1(x)
+            routing_1 = self.routing_block_1(x, is_training=is_training)
         elif routing == Routing.NO_ROUTING:
             routing_1 = None
         else:

@@ -23,13 +23,16 @@ config = dict(
     DROPOUT_RATE=float(os.environ.get("DROPOUT_RATE", 0.1)),
     NUM_ROUTES_0=int(os.environ.get("NUM_ROUTES_0", 2)),
     NUM_ROUTES_1=int(os.environ.get("NUM_ROUTES_1", 4)),
+    ROUTING_O_LOSS_WEIGHT=float(os.environ.get("ROUTING_O_LOSS_WEIGHT", 1)),
+    ROUTING_1_LOSS_WEIGHT=float(os.environ.get("ROUTING_1_LOSS_WEIGHT", 1)),
     CNN_0=32,
     CNN_1=64,
     CNN_2=128,
     TAU_INITIAL=25,
     TAU_DECAY_RATE=0.9999,
-    NO_ROUTING_STEPS=int(os.environ.get("NO_ROUTING_STEPS", None)),
-    RANDOM_ROUTING_STEPS=int(os.environ.get("RANDOM_ROUTING_STEPS", None))
+    INFORMATION_GAIN_BALANCE_COEFFICIENT=float(os.environ.get("INFORMATION_GAIN_BALANCE_COEFFICIENT", 5.0)),
+    NO_ROUTING_STEPS=int(os.environ.get("NO_ROUTING_STEPS", 0)),
+    RANDOM_ROUTING_STEPS=int(os.environ.get("RANDOM_ROUTING_STEPS", 0))
 )
 wandb.init(project="information-gain-routing-network", entity="information-gain-routing-network", config=config)
 
@@ -98,9 +101,9 @@ def reset_metrics(metrics):
 
 step = 0
 
-if config["NO_ROUTING_STEPS"] is not None:
+if config["NO_ROUTING_STEPS"] > 0:
     current_routing = Routing.NO_ROUTING
-elif config["RANDOM_ROUTING_STEPS"] is not None:
+elif config["RANDOM_ROUTING_STEPS"] > 0:
     current_routing = Routing.RANDOM_ROUTING
 else:
     current_routing = Routing.INFORMATION_GAIN_ROUTING
@@ -137,8 +140,14 @@ for epoch in range(config["NUM_EPOCHS"]):
             if current_routing == Routing.INFORMATION_GAIN_ROUTING:
                 route_0 = tf.nn.softmax(route_0 / tau, axis=-1)
                 route_1 = tf.nn.softmax(route_1 / tau, axis=-1)
-                routing_0_loss = information_gain_loss_fn(y_batch_train, route_0, balance_coefficient=5.0)
-                routing_1_loss = information_gain_loss_fn(y_batch_train, route_1, balance_coefficient=5.0)
+                routing_0_loss = config["ROUTING_O_LOSS_WEIGHT"] * information_gain_loss_fn(y_batch_train,
+                                                                                            route_0,
+                                                                                            balance_coefficient=config[
+                                                                                                "INFORMATION_GAIN_BALANCE_COEFFICIENT"])
+                routing_1_loss = config["ROUTING_O_LOSS_WEIGHT"] * information_gain_loss_fn(y_batch_train,
+                                                                                            route_1,
+                                                                                            balance_coefficient=config[
+                                                                                                "INFORMATION_GAIN_BALANCE_COEFFICIENT"])
             loss_value = classification_loss + routing_0_loss + routing_1_loss
         grads = tape.gradient(loss_value, model.trainable_weights)
         optimizer.apply_gradients(zip(grads, model.trainable_weights))
