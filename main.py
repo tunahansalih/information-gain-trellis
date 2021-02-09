@@ -4,6 +4,7 @@ import numpy as np
 import tensorflow as tf
 
 from loss.information_gain import information_gain_loss_fn
+from loss.scheduling import TimeBasedDecay, StepDecay, ExponentialDecay
 from nets.layer import InformationGainRoutingBlock, RandomRoutingBlock
 from nets.model import InformationGainRoutingModel, Routing
 from tqdm import tqdm
@@ -25,11 +26,14 @@ config = dict(
     NUM_ROUTES_1=int(os.environ.get("NUM_ROUTES_1", 4)),
     ROUTING_O_LOSS_WEIGHT=float(os.environ.get("ROUTING_O_LOSS_WEIGHT", 1)),
     ROUTING_1_LOSS_WEIGHT=float(os.environ.get("ROUTING_1_LOSS_WEIGHT", 1)),
+    ROUTING_0_LOSS_WEIGHT_DECAY=float(os.environ.get("ROUTING_0_LOSS_WEIGHT_DECAY", 0.1)),
+    ROUTING_1_LOSS_WEIGHT_DECAY=float(os.environ.get("ROUTING_1_LOSS_WEIGHT_DECAY", 0.1)),
+    WEIGHT_DECAY_METHOD="TimeBasedDecay",  # "StepDecay", "ExponentialDecay"
     CNN_0=32,
     CNN_1=64,
     CNN_2=128,
-    TAU_INITIAL=25,
-    TAU_DECAY_RATE=0.9999,
+    TAU_INITIAL=1,
+    TAU_DECAY_RATE=1,
     INFORMATION_GAIN_BALANCE_COEFFICIENT=float(os.environ.get("INFORMATION_GAIN_BALANCE_COEFFICIENT", 5.0)),
     NO_ROUTING_STEPS=int(os.environ.get("NO_ROUTING_STEPS", 0)),
     RANDOM_ROUTING_STEPS=int(os.environ.get("RANDOM_ROUTING_STEPS", 0))
@@ -78,7 +82,7 @@ dataset_test = tf.data.Dataset.from_tensor_slices((test_x, test_y)).batch(config
 model = InformationGainRoutingModel(config)
 
 loss_fn = tf.losses.CategoricalCrossentropy(from_logits=True)
-optimizer = tf.optimizers.SGD(lr=config["LR_INITIAL"], momentum=0.9)
+optimizer = tf.optimizers.SGD(lr=config["LR_INITIAL"], momentum=0.9, nesterov=True)
 
 tau = config["TAU_INITIAL"]
 
@@ -108,6 +112,16 @@ elif config["RANDOM_ROUTING_STEPS"] > 0:
 else:
     current_routing = Routing.INFORMATION_GAIN_ROUTING
 
+routing_0_loss_weight = config["ROUTING_O_LOSS_WEIGHT"]
+routing_1_loss_weight = config["ROUTING_1_LOSS_WEIGHT"]
+
+if config["WEIGHT_DECAY_METHOD"] == "TimeBasedDecay":
+    weight_scheduler = TimeBasedDecay(routing_0_loss_weight, config["ROUTING_0_LOSS_WEIGHT_DECAY"])
+elif config["WEIGHT_DECAY_METHOD"] == "StepDecay":
+    weight_scheduler = StepDecay(routing_0_loss_weight, config["ROUTING_0_LOSS_WEIGHT_DECAY"], 480)
+elif config["WEIGHT_DECAY_METHOD"] == "ExponentialDecay":
+    weight_scheduler = ExponentialDecay(routing_0_loss_weight, config["ROUTING_0_LOSS_WEIGHT_DECAY"])
+
 for epoch in range(config["NUM_EPOCHS"]):
     print(f"Epoch {epoch}")
 
@@ -130,9 +144,9 @@ for epoch in range(config["NUM_EPOCHS"]):
         if step == config["NO_ROUTING_STEPS"] or step == config["RANDOM_ROUTING_STEPS"]:
             current_routing = Routing.INFORMATION_GAIN_ROUTING
 
-        classification_loss = 0
         routing_0_loss = 0
         routing_1_loss = 0
+        information_gain_loss_weight = weight_scheduler.get_current_value(step)
         with tf.GradientTape() as tape:
             route_0, route_1, logits = model(x_batch_train, routing=current_routing, is_training=True)
             classification_loss = loss_fn(y_batch_train, logits)
@@ -140,14 +154,16 @@ for epoch in range(config["NUM_EPOCHS"]):
             if current_routing == Routing.INFORMATION_GAIN_ROUTING:
                 route_0 = tf.nn.softmax(route_0 / tau, axis=-1)
                 route_1 = tf.nn.softmax(route_1 / tau, axis=-1)
-                routing_0_loss = config["ROUTING_O_LOSS_WEIGHT"] * information_gain_loss_fn(y_batch_train,
-                                                                                            route_0,
-                                                                                            balance_coefficient=config[
-                                                                                                "INFORMATION_GAIN_BALANCE_COEFFICIENT"])
-                routing_1_loss = config["ROUTING_O_LOSS_WEIGHT"] * information_gain_loss_fn(y_batch_train,
-                                                                                            route_1,
-                                                                                            balance_coefficient=config[
-                                                                                                "INFORMATION_GAIN_BALANCE_COEFFICIENT"])
+                routing_0_loss = information_gain_loss_weight * information_gain_loss_fn(y_batch_train,
+                                                                                         route_0,
+                                                                                         balance_coefficient=
+                                                                                         config[
+                                                                                             "INFORMATION_GAIN_BALANCE_COEFFICIENT"])
+                routing_1_loss = information_gain_loss_weight * information_gain_loss_fn(y_batch_train,
+                                                                                         route_1,
+                                                                                         balance_coefficient=
+                                                                                         config[
+                                                                                             "INFORMATION_GAIN_BALANCE_COEFFICIENT"])
             loss_value = classification_loss + routing_0_loss + routing_1_loss
         grads = tape.gradient(loss_value, model.trainable_weights)
         optimizer.apply_gradients(zip(grads, model.trainable_weights))
@@ -165,10 +181,12 @@ for epoch in range(config["NUM_EPOCHS"]):
                    "Training/ClassificationLoss": metrics["ClassificationLoss"].result().numpy(),
                    "Training/Routing_0_Loss": metrics["Routing0Loss"].result().numpy(),
                    "Training/Routing_1_Loss": metrics["Routing1Loss"].result().numpy(),
+                   "Training/Routing_0_Loss_Weight": information_gain_loss_weight,
+                   "Training/Routing_1_Loss_Weight": information_gain_loss_weight,
                    "Training/Accuracy": metrics["Accuracy"].result().numpy(),
                    "Training/SoftmaxSmoothing": tau,
                    "Training/LearningRate": optimizer.lr.numpy(),
-                   "Training/Routing": current_routing.name}, step=step)
+                   "Training/Routing": current_routing.value}, step=step)
         pbar.set_description(
             f"Training Accuracy: %{metrics['Accuracy'].result().numpy() * 100:.2f} Loss: {metrics['TotalLoss'].result().numpy():.5f}")
 

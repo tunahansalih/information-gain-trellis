@@ -29,21 +29,18 @@ class RandomRoutingBlock(layers.Layer):
 
 
 class InformationGainRoutingBlock(layers.Layer):
-    def __init__(self, routes, dropout_rate=0.0):
+    def __init__(self, routes):
         super(InformationGainRoutingBlock, self).__init__()
         self.routes = routes
         self.batch_norm = layers.BatchNormalization()
         self.flatten = layers.GlobalAveragePooling2D()
         self.fc0 = layers.Dense(64, activation=tf.nn.relu)
-        self.dropout = layers.Dropout(dropout_rate)
-        self.routing = layers.Dense(routes, activation=None)
+        self.routing = layers.Dense(self.routes, activation=None)
 
     def call(self, inputs, is_training=True):
         x = self.batch_norm(inputs)
         x = self.flatten(x)
         x = self.fc0(x)
-        if is_training:
-            x = self.dropout(x)
         x = self.routing(x)
         return x
 
