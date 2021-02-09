@@ -116,11 +116,14 @@ routing_0_loss_weight = config["ROUTING_O_LOSS_WEIGHT"]
 routing_1_loss_weight = config["ROUTING_1_LOSS_WEIGHT"]
 
 if config["WEIGHT_DECAY_METHOD"] == "TimeBasedDecay":
-    weight_scheduler = TimeBasedDecay(routing_0_loss_weight, config["ROUTING_0_LOSS_WEIGHT_DECAY"])
+    weight_scheduler_0 = TimeBasedDecay(routing_0_loss_weight, config["ROUTING_0_LOSS_WEIGHT_DECAY"])
+    weight_scheduler_1 = TimeBasedDecay(routing_1_loss_weight, config["ROUTING_1_LOSS_WEIGHT_DECAY"])
 elif config["WEIGHT_DECAY_METHOD"] == "StepDecay":
-    weight_scheduler = StepDecay(routing_0_loss_weight, config["ROUTING_0_LOSS_WEIGHT_DECAY"], 480)
+    weight_scheduler_0 = StepDecay(routing_0_loss_weight, config["ROUTING_0_LOSS_WEIGHT_DECAY"], 480)
+    weight_scheduler_1 = StepDecay(routing_1_loss_weight, config["ROUTING_1_LOSS_WEIGHT_DECAY"], 480)
 elif config["WEIGHT_DECAY_METHOD"] == "ExponentialDecay":
-    weight_scheduler = ExponentialDecay(routing_0_loss_weight, config["ROUTING_0_LOSS_WEIGHT_DECAY"])
+    weight_scheduler_0 = ExponentialDecay(routing_0_loss_weight, config["ROUTING_0_LOSS_WEIGHT_DECAY"])
+    weight_scheduler_1 = ExponentialDecay(routing_1_loss_weight, config["ROUTING_1_LOSS_WEIGHT_DECAY"])
 
 for epoch in range(config["NUM_EPOCHS"]):
     print(f"Epoch {epoch}")
@@ -146,7 +149,8 @@ for epoch in range(config["NUM_EPOCHS"]):
 
         routing_0_loss = 0
         routing_1_loss = 0
-        information_gain_loss_weight = weight_scheduler.get_current_value(step)
+        information_gain_loss_weight_0 = weight_scheduler_0.get_current_value(step)
+        information_gain_loss_weight_1 = weight_scheduler_1.get_current_value(step)
         with tf.GradientTape() as tape:
             route_0, route_1, logits = model(x_batch_train, routing=current_routing, is_training=True)
             classification_loss = loss_fn(y_batch_train, logits)
@@ -154,16 +158,16 @@ for epoch in range(config["NUM_EPOCHS"]):
             if current_routing == Routing.INFORMATION_GAIN_ROUTING:
                 route_0 = tf.nn.softmax(route_0 / tau, axis=-1)
                 route_1 = tf.nn.softmax(route_1 / tau, axis=-1)
-                routing_0_loss = information_gain_loss_weight * information_gain_loss_fn(y_batch_train,
-                                                                                         route_0,
-                                                                                         balance_coefficient=
-                                                                                         config[
-                                                                                             "INFORMATION_GAIN_BALANCE_COEFFICIENT"])
-                routing_1_loss = information_gain_loss_weight * information_gain_loss_fn(y_batch_train,
-                                                                                         route_1,
-                                                                                         balance_coefficient=
-                                                                                         config[
-                                                                                             "INFORMATION_GAIN_BALANCE_COEFFICIENT"])
+                routing_0_loss = information_gain_loss_weight_0 * information_gain_loss_fn(y_batch_train,
+                                                                                           route_0,
+                                                                                           balance_coefficient=
+                                                                                           config[
+                                                                                               "INFORMATION_GAIN_BALANCE_COEFFICIENT"])
+                routing_1_loss = information_gain_loss_weight_1 * information_gain_loss_fn(y_batch_train,
+                                                                                           route_1,
+                                                                                           balance_coefficient=
+                                                                                           config[
+                                                                                               "INFORMATION_GAIN_BALANCE_COEFFICIENT"])
             loss_value = classification_loss + routing_0_loss + routing_1_loss
         grads = tape.gradient(loss_value, model.trainable_weights)
         optimizer.apply_gradients(zip(grads, model.trainable_weights))
@@ -181,8 +185,8 @@ for epoch in range(config["NUM_EPOCHS"]):
                    "Training/ClassificationLoss": metrics["ClassificationLoss"].result().numpy(),
                    "Training/Routing_0_Loss": metrics["Routing0Loss"].result().numpy(),
                    "Training/Routing_1_Loss": metrics["Routing1Loss"].result().numpy(),
-                   "Training/Routing_0_Loss_Weight": information_gain_loss_weight,
-                   "Training/Routing_1_Loss_Weight": information_gain_loss_weight,
+                   "Training/Routing_0_Loss_Weight": information_gain_loss_weight_0,
+                   "Training/Routing_1_Loss_Weight": information_gain_loss_weight_1,
                    "Training/Accuracy": metrics["Accuracy"].result().numpy(),
                    "Training/SoftmaxSmoothing": tau,
                    "Training/LearningRate": optimizer.lr.numpy(),
