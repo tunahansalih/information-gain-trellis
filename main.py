@@ -4,7 +4,7 @@ import numpy as np
 import tensorflow as tf
 
 from loss.information_gain import information_gain_loss_fn
-from loss.scheduling import TimeBasedDecay, StepDecay, ExponentialDecay
+from loss.scheduling import TimeBasedDecay, StepDecay, ExponentialDecay, EarlyStopping
 from nets.layer import InformationGainRoutingBlock, RandomRoutingBlock
 from nets.model import InformationGainRoutingModel, Routing
 from tqdm import tqdm
@@ -28,7 +28,9 @@ config = dict(
     ROUTING_1_LOSS_WEIGHT=float(os.environ.get("ROUTING_1_LOSS_WEIGHT", 1)),
     ROUTING_0_LOSS_WEIGHT_DECAY=float(os.environ.get("ROUTING_0_LOSS_WEIGHT_DECAY", 0.1)),
     ROUTING_1_LOSS_WEIGHT_DECAY=float(os.environ.get("ROUTING_1_LOSS_WEIGHT_DECAY", 0.1)),
-    WEIGHT_DECAY_METHOD="TimeBasedDecay",  # "StepDecay", "ExponentialDecay"
+    ROUTING_0_EARLY_STOPPING_STEP=20000,
+    ROUTING_1_EARLY_STOPPING_STEP=20000,
+    WEIGHT_DECAY_METHOD="TimeBasedDecay",  # "StepDecay", "ExponentialDecay", "EarlyStopping"
     CNN_0=32,
     CNN_1=64,
     CNN_2=128,
@@ -54,40 +56,40 @@ if gpus:
 
 print("Num GPUs Available: ", len(tf.config.experimental.list_physical_devices('GPU')))
 
-if config["DATASET"] == "fashion_mnist":
+if wandb.config["DATASET"] == "fashion_mnist":
     (train_x, train_y), (test_x, test_y) = tf.keras.datasets.fashion_mnist.load_data()
     train_x = np.expand_dims(train_x, -1)
     test_x = np.expand_dims(test_x, -1)
     input_img = tf.keras.layers.Input((28, 28, 1))
-    config["NUM_CLASSES"] = 10
+    wandb.config["NUM_CLASSES"] = 10
 
-elif config["DATASET"] == "cifar100":
+elif wandb.config["DATASET"] == "cifar100":
     (train_x, train_y), (test_x, test_y) = tf.keras.datasets.cifar100.load_data()
     input_img = tf.keras.layers.Input((32, 32, 3))
-    config["NUM_CLASSES"] = 100
+    wandb.config["NUM_CLASSES"] = 100
 
 train_x = train_x / 255.0
 test_x = test_x / 255.0
 
-train_y = tf.keras.utils.to_categorical(train_y, config["NUM_CLASSES"])
-test_y = tf.keras.utils.to_categorical(test_y, config["NUM_CLASSES"])
+train_y = tf.keras.utils.to_categorical(train_y, wandb.config["NUM_CLASSES"])
+test_y = tf.keras.utils.to_categorical(test_y, wandb.config["NUM_CLASSES"])
 
 # train_x, validation_x, train_y, validation_y = train_test_split(train_x, train_y, test_size=0.1)
 
 dataset_train = tf.data.Dataset.from_tensor_slices((train_x, train_y)).shuffle(60000, seed=5361).batch(
-    config["BATCH_SIZE"])
-dataset_validation = tf.data.Dataset.from_tensor_slices((test_x, test_y)).batch(config["BATCH_SIZE"])
-dataset_test = tf.data.Dataset.from_tensor_slices((test_x, test_y)).batch(config["BATCH_SIZE"])
+    wandb.config["BATCH_SIZE"])
+dataset_validation = tf.data.Dataset.from_tensor_slices((test_x, test_y)).batch(wandb.config["BATCH_SIZE"])
+dataset_test = tf.data.Dataset.from_tensor_slices((test_x, test_y)).batch(wandb.config["BATCH_SIZE"])
 
 model = InformationGainRoutingModel(config)
 
 loss_fn = tf.losses.CategoricalCrossentropy(from_logits=True)
-optimizer = tf.optimizers.SGD(lr=config["LR_INITIAL"], momentum=0.9, nesterov=True)
+optimizer = tf.optimizers.SGD(lr=wandb.config["LR_INITIAL"], momentum=0.9, nesterov=True)
 
-tau = config["TAU_INITIAL"]
+tau = wandb.config["TAU_INITIAL"]
 
-metrics = {"Route0": [tf.keras.metrics.MeanTensor() for i in range(config["NUM_CLASSES"])],
-           "Route1": [tf.keras.metrics.MeanTensor() for i in range(config["NUM_CLASSES"])],
+metrics = {"Route0": [tf.keras.metrics.MeanTensor() for i in range(wandb.config["NUM_CLASSES"])],
+           "Route1": [tf.keras.metrics.MeanTensor() for i in range(wandb.config["NUM_CLASSES"])],
            "Accuracy": tf.keras.metrics.CategoricalAccuracy(),
            "TotalLoss": tf.keras.metrics.Mean(),
            "Routing0Loss": tf.keras.metrics.Mean(),
@@ -105,27 +107,29 @@ def reset_metrics(metrics):
 
 step = 0
 
-if config["NO_ROUTING_STEPS"] > 0:
+if wandb.config["NO_ROUTING_STEPS"] > 0:
     current_routing = Routing.NO_ROUTING
-elif config["RANDOM_ROUTING_STEPS"] > 0:
+elif wandb.config["RANDOM_ROUTING_STEPS"] > 0:
     current_routing = Routing.RANDOM_ROUTING
 else:
     current_routing = Routing.INFORMATION_GAIN_ROUTING
 
-routing_0_loss_weight = config["ROUTING_O_LOSS_WEIGHT"]
-routing_1_loss_weight = config["ROUTING_1_LOSS_WEIGHT"]
+routing_0_loss_weight = wandb.config["ROUTING_O_LOSS_WEIGHT"]
+routing_1_loss_weight = wandb.config["ROUTING_1_LOSS_WEIGHT"]
 
-if config["WEIGHT_DECAY_METHOD"] == "TimeBasedDecay":
-    weight_scheduler_0 = TimeBasedDecay(routing_0_loss_weight, config["ROUTING_0_LOSS_WEIGHT_DECAY"])
-    weight_scheduler_1 = TimeBasedDecay(routing_1_loss_weight, config["ROUTING_1_LOSS_WEIGHT_DECAY"])
-elif config["WEIGHT_DECAY_METHOD"] == "StepDecay":
-    weight_scheduler_0 = StepDecay(routing_0_loss_weight, config["ROUTING_0_LOSS_WEIGHT_DECAY"], 480)
-    weight_scheduler_1 = StepDecay(routing_1_loss_weight, config["ROUTING_1_LOSS_WEIGHT_DECAY"], 480)
-elif config["WEIGHT_DECAY_METHOD"] == "ExponentialDecay":
-    weight_scheduler_0 = ExponentialDecay(routing_0_loss_weight, config["ROUTING_0_LOSS_WEIGHT_DECAY"])
-    weight_scheduler_1 = ExponentialDecay(routing_1_loss_weight, config["ROUTING_1_LOSS_WEIGHT_DECAY"])
-
-for epoch in range(config["NUM_EPOCHS"]):
+if wandb.config["WEIGHT_DECAY_METHOD"] == "TimeBasedDecay":
+    weight_scheduler_0 = TimeBasedDecay(routing_0_loss_weight, wandb.config["ROUTING_0_LOSS_WEIGHT_DECAY"])
+    weight_scheduler_1 = TimeBasedDecay(routing_1_loss_weight, wandb.config["ROUTING_1_LOSS_WEIGHT_DECAY"])
+elif wandb.config["WEIGHT_DECAY_METHOD"] == "StepDecay":
+    weight_scheduler_0 = StepDecay(routing_0_loss_weight, wandb.config["ROUTING_0_LOSS_WEIGHT_DECAY"], 480)
+    weight_scheduler_1 = StepDecay(routing_1_loss_weight, wandb.config["ROUTING_1_LOSS_WEIGHT_DECAY"], 480)
+elif wandb.config["WEIGHT_DECAY_METHOD"] == "ExponentialDecay":
+    weight_scheduler_0 = ExponentialDecay(routing_0_loss_weight, wandb.config["ROUTING_0_LOSS_WEIGHT_DECAY"])
+    weight_scheduler_1 = ExponentialDecay(routing_1_loss_weight, wandb.config["ROUTING_1_LOSS_WEIGHT_DECAY"])
+elif wandb.config["WEIGHT_DECAY_METHOD"] == "EarlyStopping":
+    weight_scheduler_0 = EarlyStopping(routing_0_loss_weight, wandb.config["ROUTING_0_EARLY_STOPPING_STEP"])
+    weight_scheduler_1 = EarlyStopping(routing_1_loss_weight, wandb.config["ROUTING_1_EARLY_STOPPING_STEP"])
+for epoch in range(wandb.config["NUM_EPOCHS"]):
     print(f"Epoch {epoch}")
 
     reset_metrics(metrics)
@@ -137,14 +141,14 @@ for epoch in range(config["NUM_EPOCHS"]):
 
         # Update Learning Rate
         if step == 15000:
-            tf.keras.backend.set_value(optimizer.learning_rate, config["LR_INITIAL"] / 2)
+            tf.keras.backend.set_value(optimizer.learning_rate, wandb.config["LR_INITIAL"] / 2)
         if step == 30000:
-            tf.keras.backend.set_value(optimizer.learning_rate, config["LR_INITIAL"] / 4)
+            tf.keras.backend.set_value(optimizer.learning_rate, wandb.config["LR_INITIAL"] / 4)
         if step == 40000:
-            tf.keras.backend.set_value(optimizer.learning_rate, config["LR_INITIAL"] / 40)
+            tf.keras.backend.set_value(optimizer.learning_rate, wandb.config["LR_INITIAL"] / 40)
 
         # Update routing method
-        if step == config["NO_ROUTING_STEPS"] or step == config["RANDOM_ROUTING_STEPS"]:
+        if step == wandb.config["NO_ROUTING_STEPS"] or step == wandb.config["RANDOM_ROUTING_STEPS"]:
             current_routing = Routing.INFORMATION_GAIN_ROUTING
 
         routing_0_loss = 0
@@ -161,12 +165,12 @@ for epoch in range(config["NUM_EPOCHS"]):
                 routing_0_loss = information_gain_loss_weight_0 * information_gain_loss_fn(y_batch_train,
                                                                                            route_0,
                                                                                            balance_coefficient=
-                                                                                           config[
+                                                                                           wandb.config[
                                                                                                "INFORMATION_GAIN_BALANCE_COEFFICIENT"])
                 routing_1_loss = information_gain_loss_weight_1 * information_gain_loss_fn(y_batch_train,
                                                                                            route_1,
                                                                                            balance_coefficient=
-                                                                                           config[
+                                                                                           wandb.config[
                                                                                                "INFORMATION_GAIN_BALANCE_COEFFICIENT"])
             loss_value = classification_loss + routing_0_loss + routing_1_loss
         grads = tape.gradient(loss_value, model.trainable_weights)
@@ -195,7 +199,7 @@ for epoch in range(config["NUM_EPOCHS"]):
             f"Training Accuracy: %{metrics['Accuracy'].result().numpy() * 100:.2f} Loss: {metrics['TotalLoss'].result().numpy():.5f}")
 
         if step % 2 == 1:
-            tau = tau * config["TAU_DECAY_RATE"]
+            tau = tau * wandb.config["TAU_DECAY_RATE"]
 
     # Validation
     reset_metrics(metrics)

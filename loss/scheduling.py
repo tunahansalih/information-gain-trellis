@@ -27,3 +27,14 @@ class ExponentialDecay:
 
     def get_current_value(self, step):
         return self.initial_value * math.pow(math.e, -self.decay * step)
+
+
+class EarlyStopping:
+    def __init__(self, initial_value, stopping_step):
+        self.initial_value = initial_value
+        self.stopping_step = stopping_step
+
+    def get_current_value(self, step):
+        if step >= self.stopping_step:
+            return 0
+        return self.initial_value
