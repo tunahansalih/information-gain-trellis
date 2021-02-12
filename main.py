@@ -81,7 +81,7 @@ dataset_train = tf.data.Dataset.from_tensor_slices((train_x, train_y)).shuffle(6
 dataset_validation = tf.data.Dataset.from_tensor_slices((test_x, test_y)).batch(wandb.config["BATCH_SIZE"])
 dataset_test = tf.data.Dataset.from_tensor_slices((test_x, test_y)).batch(wandb.config["BATCH_SIZE"])
 
-model = InformationGainRoutingModel(config)
+model = InformationGainRoutingModel(wandb.config)
 
 loss_fn = tf.losses.CategoricalCrossentropy(from_logits=True)
 optimizer = tf.optimizers.SGD(lr=wandb.config["LR_INITIAL"], momentum=0.9, nesterov=True)
