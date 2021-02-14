@@ -26,8 +26,7 @@ config = dict(
     NUM_ROUTES_1=int(os.environ.get("NUM_ROUTES_1", 4)),
     ROUTING_O_LOSS_WEIGHT=float(os.environ.get("ROUTING_O_LOSS_WEIGHT", 1)),
     ROUTING_1_LOSS_WEIGHT=float(os.environ.get("ROUTING_1_LOSS_WEIGHT", 1)),
-    ROUTING_0_LOSS_WEIGHT_DECAY=float(os.environ.get("ROUTING_0_LOSS_WEIGHT_DECAY", 0.1)),
-    ROUTING_1_LOSS_WEIGHT_DECAY=float(os.environ.get("ROUTING_1_LOSS_WEIGHT_DECAY", 0.1)),
+    ROUTING_LOSS_WEIGHT_DECAY=float(os.environ.get("ROUTING_LOSS_WEIGHT_DECAY", 0.1)),
     ROUTING_0_EARLY_STOPPING_STEP=20000,
     ROUTING_1_EARLY_STOPPING_STEP=20000,
     WEIGHT_DECAY_METHOD="TimeBasedDecay",  # "StepDecay", "ExponentialDecay", "EarlyStopping"
@@ -55,6 +54,8 @@ if gpus:
         print(e)
 
 print("Num GPUs Available: ", len(tf.config.experimental.list_physical_devices('GPU')))
+
+print(wandb.config)
 
 if wandb.config["DATASET"] == "fashion_mnist":
     (train_x, train_y), (test_x, test_y) = tf.keras.datasets.fashion_mnist.load_data()
@@ -118,17 +119,17 @@ routing_0_loss_weight = wandb.config["ROUTING_O_LOSS_WEIGHT"]
 routing_1_loss_weight = wandb.config["ROUTING_1_LOSS_WEIGHT"]
 
 if wandb.config["WEIGHT_DECAY_METHOD"] == "TimeBasedDecay":
-    weight_scheduler_0 = TimeBasedDecay(routing_0_loss_weight, wandb.config["ROUTING_0_LOSS_WEIGHT_DECAY"])
-    weight_scheduler_1 = TimeBasedDecay(routing_1_loss_weight, wandb.config["ROUTING_1_LOSS_WEIGHT_DECAY"])
+    weight_scheduler_0 = TimeBasedDecay(routing_0_loss_weight, wandb.config["ROUTING_LOSS_WEIGHT_DECAY"])
+    weight_scheduler_1 = TimeBasedDecay(routing_1_loss_weight, wandb.config["ROUTING_LOSS_WEIGHT_DECAY"])
 elif wandb.config["WEIGHT_DECAY_METHOD"] == "StepDecay":
-    weight_scheduler_0 = StepDecay(routing_0_loss_weight, wandb.config["ROUTING_0_LOSS_WEIGHT_DECAY"], 480)
-    weight_scheduler_1 = StepDecay(routing_1_loss_weight, wandb.config["ROUTING_1_LOSS_WEIGHT_DECAY"], 480)
+    weight_scheduler_0 = StepDecay(routing_0_loss_weight, wandb.config["ROUTING_LOSS_WEIGHT_DECAY"], 480)
+    weight_scheduler_1 = StepDecay(routing_1_loss_weight, wandb.config["ROUTING_LOSS_WEIGHT_DECAY"], 480)
 elif wandb.config["WEIGHT_DECAY_METHOD"] == "ExponentialDecay":
-    weight_scheduler_0 = ExponentialDecay(routing_0_loss_weight, wandb.config["ROUTING_0_LOSS_WEIGHT_DECAY"])
-    weight_scheduler_1 = ExponentialDecay(routing_1_loss_weight, wandb.config["ROUTING_1_LOSS_WEIGHT_DECAY"])
+    weight_scheduler_0 = ExponentialDecay(routing_0_loss_weight, wandb.config["ROUTING_LOSS_WEIGHT_DECAY"])
+    weight_scheduler_1 = ExponentialDecay(routing_1_loss_weight, wandb.config["ROUTING_LOSS_WEIGHT_DECAY"])
 elif wandb.config["WEIGHT_DECAY_METHOD"] == "EarlyStopping":
-    weight_scheduler_0 = EarlyStopping(routing_0_loss_weight, wandb.config["ROUTING_0_EARLY_STOPPING_STEP"])
-    weight_scheduler_1 = EarlyStopping(routing_1_loss_weight, wandb.config["ROUTING_1_EARLY_STOPPING_STEP"])
+    weight_scheduler_0 = EarlyStopping(routing_0_loss_weight, wandb.config["ROUTING_EARLY_STOPPING_STEP"])
+    weight_scheduler_1 = EarlyStopping(routing_1_loss_weight, wandb.config["ROUTING_EARLY_STOPPING_STEP"])
 for epoch in range(wandb.config["NUM_EPOCHS"]):
     print(f"Epoch {epoch}")
 
