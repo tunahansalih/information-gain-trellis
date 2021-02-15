@@ -49,5 +49,6 @@ class InformationGainLoss:
         # Calculate the information gain
 
         information_gain = (self.balance_coefficient * entropy_p_n) + entropy_p_c - entropy_p_cn
-        information_gain = (self.max_information_gain - information_gain) / (self.max_information_gain - self.min_information_gain)
+        information_gain = 1.0 - (information_gain - self.min_information_gain) / (
+                    self.max_information_gain - self.min_information_gain)
         return information_gain
