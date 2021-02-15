@@ -7,7 +7,7 @@ class TimeBasedDecay:
         self.decay = decay
 
     def get_current_value(self, step):
-        return 1 / (1. + self.decay * step)
+        return self.initial_value / (1. + self.decay * step)
 
 
 class StepDecay:
@@ -17,7 +17,7 @@ class StepDecay:
         self.decay_step = decay_step
 
     def get_current_value(self, step):
-        return self.initial_value * math.pow(self.decay, math.floor((1 + step) / self.decay_step))
+        return self.initial_value * math.pow(self.decay, math.floor(step / self.decay_step))
 
 
 class ExponentialDecay:

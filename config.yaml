@@ -1,0 +1,49 @@
+DATASET:
+  desc: fashion_mnist or cifar100
+  value: fashion_mnist
+NUM_EPOCHS:
+  value: 100
+BATCH_SIZE:
+  value: 125
+USE_ROUTING:
+  value: True
+LR_INITIAL:
+  value: 0.01
+MOMENTUM:
+  value: 0.9
+DROPOUT_RATE:
+  value: 0.1
+NUM_ROUTES_0:
+  value: 2
+NUM_ROUTES_1:
+  value: 4
+ROUTING_0_LOSS_WEIGHT:
+  value: 1
+ROUTING_1_LOSS_WEIGHT:
+  value: 1
+WEIGHT_DECAY_METHOD:
+  desc: StepDecay, ExponentialDecay, EarlyStopping or TimeBasedDecay
+  value: TimeBasedDecay
+ROUTING_LOSS_WEIGHT_DECAY:
+  value: 0
+ROUTING_EARLY_STOPPING_STEP:
+  desc: Number of steps before stopping training of the routing layers, if EarlyStopping decay method is used
+  value: 0
+CNN_0:
+  value: 32
+CNN_1:
+  value: 64
+CNN_2:
+  value: 128
+TAU_INITIAL:
+  value: 1
+TAU_DECAY_RATE:
+  value: 1
+INFORMATION_GAIN_BALANCE_COEFFICIENT:
+  value: 5.0
+NO_ROUTING_STEPS:
+  desc: Number of steps in the beginning of the training where no routing will be used
+  value: 0
+RANDOM_ROUTING_STEPS:
+  desc: Number of steps in the beginning of the training where random routing will be used
+  value: 0

@@ -16,14 +16,17 @@ class InformationGainRoutingModel(tf.keras.models.Model):
         super(InformationGainRoutingModel, self).__init__()
 
         self.conv_block_0 = ConvolutionalBlock(filters=config["CNN_0"], kernel_size=(5, 5), padding="same")
-        self.routing_block_0 = InformationGainRoutingBlock(routes=config["NUM_ROUTES_0"])
-        self.random_routing_block_0 = RandomRoutingBlock(routes=config["NUM_ROUTES_0"])
-        self.routing_mask_layer_0 = RoutingMaskLayer(routes=config["NUM_ROUTES_0"])
+
+        if config["USE_ROUTING"]:
+            self.routing_block_0 = InformationGainRoutingBlock(routes=config["NUM_ROUTES_0"])
+            self.random_routing_block_0 = RandomRoutingBlock(routes=config["NUM_ROUTES_0"])
+            self.routing_mask_layer_0 = RoutingMaskLayer(routes=config["NUM_ROUTES_0"])
 
         self.conv_block_1 = ConvolutionalBlock(filters=config["CNN_1"], kernel_size=(5, 5), padding="same")
-        self.routing_block_1 = InformationGainRoutingBlock(routes=config["NUM_ROUTES_1"])
-        self.random_routing_block_1 = RandomRoutingBlock(routes=config["NUM_ROUTES_1"])
-        self.routing_mask_layer_1 = RoutingMaskLayer(routes=config["NUM_ROUTES_1"])
+        if config["USE_ROUTING"]:
+            self.routing_block_1 = InformationGainRoutingBlock(routes=config["NUM_ROUTES_1"])
+            self.random_routing_block_1 = RandomRoutingBlock(routes=config["NUM_ROUTES_1"])
+            self.routing_mask_layer_1 = RoutingMaskLayer(routes=config["NUM_ROUTES_1"])
 
         self.conv_block_2 = ConvolutionalBlock(filters=config["CNN_2"], kernel_size=(5, 5), padding="same")
         self.flatten = tf.keras.layers.Flatten()
