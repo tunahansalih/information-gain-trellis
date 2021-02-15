@@ -4,11 +4,12 @@ import numpy as np
 import tensorflow as tf
 
 from loss.information_gain import information_gain_loss_fn
-from loss.scheduling import TimeBasedDecay, StepDecay, ExponentialDecay, EarlyStopping
 from nets.model import InformationGainRoutingModel, Routing
 from tqdm import tqdm
 
 import wandb
+
+from utils.helpers import routing_method, current_learning_rate, weight_scheduler, reset_metrics
 
 config = dict(
     # Model Parameters
@@ -78,62 +79,25 @@ metrics = {"Route0": [tf.keras.metrics.MeanTensor() for i in range(wandb.config[
            "Routing1Loss": tf.keras.metrics.Mean(),
            "ClassificationLoss": tf.keras.metrics.Mean()}
 
-
-def reset_metrics(metrics_dict):
-    for metric in ["Accuracy", "TotalLoss", "Routing0Loss", "Routing1Loss", "ClassificationLoss"]:
-        metrics_dict[metric].reset_states()
-    for metric in ["Route0", "Route1"]:
-        for metric_route in metrics_dict[metric]:
-            metric_route.reset_states()
-
-
-step = 0
-
-if wandb.config["NO_ROUTING_STEPS"] > 0:
-    current_routing = Routing.NO_ROUTING
-elif wandb.config["RANDOM_ROUTING_STEPS"] > 0:
-    current_routing = Routing.RANDOM_ROUTING
-else:
-    current_routing = Routing.INFORMATION_GAIN_ROUTING
-
-
-
 routing_0_loss_weight = wandb.config["ROUTING_O_LOSS_WEIGHT"]
 routing_1_loss_weight = wandb.config["ROUTING_1_LOSS_WEIGHT"]
 
-if wandb.config["WEIGHT_DECAY_METHOD"] == "TimeBasedDecay":
-    weight_scheduler_0 = TimeBasedDecay(routing_0_loss_weight, wandb.config["ROUTING_LOSS_WEIGHT_DECAY"])
-    weight_scheduler_1 = TimeBasedDecay(routing_1_loss_weight, wandb.config["ROUTING_LOSS_WEIGHT_DECAY"])
-elif wandb.config["WEIGHT_DECAY_METHOD"] == "StepDecay":
-    weight_scheduler_0 = StepDecay(routing_0_loss_weight, wandb.config["ROUTING_LOSS_WEIGHT_DECAY"], 480)
-    weight_scheduler_1 = StepDecay(routing_1_loss_weight, wandb.config["ROUTING_LOSS_WEIGHT_DECAY"], 480)
-elif wandb.config["WEIGHT_DECAY_METHOD"] == "ExponentialDecay":
-    weight_scheduler_0 = ExponentialDecay(routing_0_loss_weight, wandb.config["ROUTING_LOSS_WEIGHT_DECAY"])
-    weight_scheduler_1 = ExponentialDecay(routing_1_loss_weight, wandb.config["ROUTING_LOSS_WEIGHT_DECAY"])
-elif wandb.config["WEIGHT_DECAY_METHOD"] == "EarlyStopping":
-    weight_scheduler_0 = EarlyStopping(routing_0_loss_weight, wandb.config["ROUTING_EARLY_STOPPING_STEP"])
-    weight_scheduler_1 = EarlyStopping(routing_1_loss_weight, wandb.config["ROUTING_EARLY_STOPPING_STEP"])
+weight_scheduler_0, weight_scheduler_1 = weight_scheduler(wandb.config)
+
+step = 0
 for epoch in range(wandb.config["NUM_EPOCHS"]):
     print(f"Epoch {epoch}")
 
     reset_metrics(metrics)
-
     pbar = tqdm(dataset_train)
 
     for i, (x_batch_train, y_batch_train) in enumerate(pbar):
         step += 1
 
-        # Update Learning Rate
-        if step == 15000:
-            tf.keras.backend.set_value(optimizer.learning_rate, wandb.config["LR_INITIAL"] / 2)
-        if step == 30000:
-            tf.keras.backend.set_value(optimizer.learning_rate, wandb.config["LR_INITIAL"] / 4)
-        if step == 40000:
-            tf.keras.backend.set_value(optimizer.learning_rate, wandb.config["LR_INITIAL"] / 40)
+        current_lr = current_learning_rate(step, wandb.config)
+        tf.keras.backend.set_value(optimizer.learning_rate, current_lr)
 
-        # Update routing method
-        if step == wandb.config["NO_ROUTING_STEPS"] or step == wandb.config["RANDOM_ROUTING_STEPS"]:
-            current_routing = Routing.INFORMATION_GAIN_ROUTING
+        current_routing = routing_method(step=step, config=wandb.config)
 
         routing_0_loss = 0
         routing_1_loss = 0
@@ -177,7 +141,7 @@ for epoch in range(wandb.config["NUM_EPOCHS"]):
                    "Training/Routing_1_Loss_Weight": information_gain_loss_weight_1,
                    "Training/Accuracy": metrics["Accuracy"].result().numpy(),
                    "Training/SoftmaxSmoothing": tau,
-                   "Training/LearningRate": optimizer.lr.numpy(),
+                   "Training/LearningRate": current_lr,
                    "Training/Routing": current_routing.value}, step=step)
         pbar.set_description(
             f"Training Accuracy: %{metrics['Accuracy'].result().numpy() * 100:.2f} Loss: {metrics['TotalLoss'].result().numpy():.5f}")
@@ -186,30 +150,32 @@ for epoch in range(wandb.config["NUM_EPOCHS"]):
             tau = tau * wandb.config["TAU_DECAY_RATE"]
 
     # Validation
-    reset_metrics(metrics)
-    pbar = tqdm(dataset_validation)
-    for (x_batch_val, y_batch_val) in pbar:
-        route_0, route_1, logits = model(x_batch_val, routing=current_routing, is_training=False)
-        if current_routing in [Routing.RANDOM_ROUTING, Routing.INFORMATION_GAIN_ROUTING]:
-            route_0 = tf.nn.softmax(route_0, axis=-1)
-            route_1 = tf.nn.softmax(route_1, axis=-1)
-            y_batch_val_index = tf.argmax(y_batch_val, axis=-1)
-            for c, r_0, r_1 in zip(y_batch_val_index, route_0, route_1):
-                metrics["Route0"][c].update_state(r_0)
-                metrics["Route1"][c].update_state(r_1)
+    if epoch + 1 % 10 == 0:
+        reset_metrics(metrics)
+        pbar = tqdm(dataset_validation)
+        current_routing = routing_method(step=step, config=wandb.config)
+        for (x_batch_val, y_batch_val) in pbar:
+            route_0, route_1, logits = model(x_batch_val, routing=current_routing, is_training=False)
+            if current_routing in [Routing.RANDOM_ROUTING, Routing.INFORMATION_GAIN_ROUTING]:
+                route_0 = tf.nn.softmax(route_0, axis=-1)
+                route_1 = tf.nn.softmax(route_1, axis=-1)
+                y_batch_val_index = tf.argmax(y_batch_val, axis=-1)
+                for c, r_0, r_1 in zip(y_batch_val_index, route_0, route_1):
+                    metrics["Route0"][c].update_state(r_0)
+                    metrics["Route1"][c].update_state(r_1)
 
-        metrics["Accuracy"].update_state(y_batch_val, logits)
+            metrics["Accuracy"].update_state(y_batch_val, logits)
 
-        pbar.set_description(
-            f"Validation Accuracy: %{metrics['Accuracy'].result().numpy() * 100:.2f}")
+            pbar.set_description(
+                f"Validation Accuracy: %{metrics['Accuracy'].result().numpy() * 100:.2f}")
 
-    result_log = {}
-    for k in ["Route0", "Route1"]:
-        for c, metric in enumerate(metrics[k]):
-            data = [[path, ratio] for (path, ratio) in enumerate(metric.result().numpy())]
-            table = wandb.Table(data=data, columns=["Route", "Ratio"])
-            result_log[f"Validation/{k}/Class_{c}"] = wandb.plot.bar(table, "Route", "Ratio",
-                                                                     title=f"{k} Ratios For Class {c}")
-    result_log["Epoch"] = epoch
-    result_log["Validation/Accuracy"] = metrics["Accuracy"].result().numpy()
-    wandb.log(result_log, step=step)
+        result_log = {}
+        for k in ["Route0", "Route1"]:
+            for c, metric in enumerate(metrics[k]):
+                data = [[path, ratio] for (path, ratio) in enumerate(metric.result().numpy())]
+                table = wandb.Table(data=data, columns=["Route", "Ratio"])
+                result_log[f"Validation/{k}/Class_{c}"] = wandb.plot.bar(table, "Route", "Ratio",
+                                                                         title=f"{k} Ratios For Class {c}")
+        result_log["Epoch"] = epoch
+        result_log["Validation/Accuracy"] = metrics["Accuracy"].result().numpy()
+        wandb.log(result_log, step=step)
