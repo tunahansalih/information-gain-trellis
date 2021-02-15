@@ -5,10 +5,8 @@ import tensorflow as tf
 
 from loss.information_gain import information_gain_loss_fn
 from loss.scheduling import TimeBasedDecay, StepDecay, ExponentialDecay, EarlyStopping
-from nets.layer import InformationGainRoutingBlock, RandomRoutingBlock
 from nets.model import InformationGainRoutingModel, Routing
 from tqdm import tqdm
-# from sklearn.model_selection import train_test_split
 
 import wandb
 
@@ -21,6 +19,7 @@ config = dict(
     USE_ROUTING=True,
     USE_RANDOM_ROUTING=False,
     LR_INITIAL=0.01,
+    MOMENTUM=0.9,
     DROPOUT_RATE=float(os.environ.get("DROPOUT_RATE", 0.1)),
     NUM_ROUTES_0=int(os.environ.get("NUM_ROUTES_0", 2)),
     NUM_ROUTES_1=int(os.environ.get("NUM_ROUTES_1", 4)),
@@ -41,33 +40,18 @@ config = dict(
 )
 wandb.init(project="information-gain-routing-network", entity="information-gain-routing-network", config=config)
 
-gpus = tf.config.experimental.list_physical_devices('GPU')
-if gpus:
-    try:
-        # Currently, memory growth needs to be the same across GPUs
-        for gpu in gpus:
-            tf.config.experimental.set_memory_growth(gpu, True)
-        logical_gpus = tf.config.experimental.list_logical_devices('GPU')
-        print(len(gpus), "Physical GPUs,", len(logical_gpus), "Logical GPUs")
-    except RuntimeError as e:
-        # Memory growth must be set before GPUs have been initialized
-        print(e)
-
-print("Num GPUs Available: ", len(tf.config.experimental.list_physical_devices('GPU')))
-
-print(wandb.config)
-
 if wandb.config["DATASET"] == "fashion_mnist":
     (train_x, train_y), (test_x, test_y) = tf.keras.datasets.fashion_mnist.load_data()
     train_x = np.expand_dims(train_x, -1)
     test_x = np.expand_dims(test_x, -1)
-    input_img = tf.keras.layers.Input((28, 28, 1))
+    input_shape = (28, 28, 1)
     wandb.config["NUM_CLASSES"] = 10
-
 elif wandb.config["DATASET"] == "cifar100":
     (train_x, train_y), (test_x, test_y) = tf.keras.datasets.cifar100.load_data()
-    input_img = tf.keras.layers.Input((32, 32, 3))
+    input_shape = (32, 32, 3)
     wandb.config["NUM_CLASSES"] = 100
+else:
+    raise NotImplementedError
 
 train_x = train_x / 255.0
 test_x = test_x / 255.0
@@ -75,17 +59,14 @@ test_x = test_x / 255.0
 train_y = tf.keras.utils.to_categorical(train_y, wandb.config["NUM_CLASSES"])
 test_y = tf.keras.utils.to_categorical(test_y, wandb.config["NUM_CLASSES"])
 
-# train_x, validation_x, train_y, validation_y = train_test_split(train_x, train_y, test_size=0.1)
-
-dataset_train = tf.data.Dataset.from_tensor_slices((train_x, train_y)).shuffle(60000, seed=5361).batch(
+dataset_train = tf.data.Dataset.from_tensor_slices((train_x, train_y)).shuffle(60000, seed=3333).batch(
     wandb.config["BATCH_SIZE"])
 dataset_validation = tf.data.Dataset.from_tensor_slices((test_x, test_y)).batch(wandb.config["BATCH_SIZE"])
-dataset_test = tf.data.Dataset.from_tensor_slices((test_x, test_y)).batch(wandb.config["BATCH_SIZE"])
 
 model = InformationGainRoutingModel(wandb.config)
 
 loss_fn = tf.losses.CategoricalCrossentropy(from_logits=True)
-optimizer = tf.optimizers.SGD(lr=wandb.config["LR_INITIAL"], momentum=0.9, nesterov=True)
+optimizer = tf.optimizers.SGD(lr=wandb.config["LR_INITIAL"], momentum=wandb.config["MOMENTUM"], nesterov=True)
 
 tau = wandb.config["TAU_INITIAL"]
 
@@ -98,11 +79,11 @@ metrics = {"Route0": [tf.keras.metrics.MeanTensor() for i in range(wandb.config[
            "ClassificationLoss": tf.keras.metrics.Mean()}
 
 
-def reset_metrics(metrics):
-    for k in ["Accuracy", "TotalLoss", "Routing0Loss", "Routing1Loss", "ClassificationLoss"]:
-        metrics[k].reset_states()
-    for k in ["Route0", "Route1"]:
-        for metric_route in metrics[k]:
+def reset_metrics(metrics_dict):
+    for metric in ["Accuracy", "TotalLoss", "Routing0Loss", "Routing1Loss", "ClassificationLoss"]:
+        metrics_dict[metric].reset_states()
+    for metric in ["Route0", "Route1"]:
+        for metric_route in metrics_dict[metric]:
             metric_route.reset_states()
 
 
@@ -114,6 +95,8 @@ elif wandb.config["RANDOM_ROUTING_STEPS"] > 0:
     current_routing = Routing.RANDOM_ROUTING
 else:
     current_routing = Routing.INFORMATION_GAIN_ROUTING
+
+
 
 routing_0_loss_weight = wandb.config["ROUTING_O_LOSS_WEIGHT"]
 routing_1_loss_weight = wandb.config["ROUTING_1_LOSS_WEIGHT"]
