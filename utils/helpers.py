@@ -4,9 +4,9 @@ from nets.model import Routing
 
 def routing_method(step, config):
     if config["USE_ROUTING"]:
-        if 0 < config["NO_ROUTING_STEPS"] < step:
+        if 0 < config["NO_ROUTING_STEPS"] and step < config["RANDOM_ROUTING_STEPS"]:
             return Routing.NO_ROUTING
-        elif 0 < config["RANDOM_ROUTING_STEPS"] < step:
+        elif 0 < config["RANDOM_ROUTING_STEPS"] and step < config["RANDOM_ROUTING_STEPS"]:
             return Routing.RANDOM_ROUTING
         else:
             return Routing.INFORMATION_GAIN_ROUTING
@@ -33,9 +33,9 @@ def weight_scheduler(config):
                                             config["ROUTING_LOSS_WEIGHT_DECAY"])
     elif config["WEIGHT_DECAY_METHOD"] == "StepDecay":
         weight_scheduler_0 = StepDecay(config["ROUTING_0_LOSS_WEIGHT"], config["ROUTING_LOSS_WEIGHT_DECAY"],
-                                       50000 // config["BATCH_SIZE"])
+                                       config["NUM_TRAINING"] // config["BATCH_SIZE"] * 10)
         weight_scheduler_1 = StepDecay(config["ROUTING_1_LOSS_WEIGHT"], config["ROUTING_LOSS_WEIGHT_DECAY"],
-                                       50000 // config["BATCH_SIZE"])
+                                       config["NUM_TRAINING"] // config["BATCH_SIZE"] * 10)
     elif config["WEIGHT_DECAY_METHOD"] == "ExponentialDecay":
         weight_scheduler_0 = ExponentialDecay(config["ROUTING_0_LOSS_WEIGHT"],
                                               config["ROUTING_LOSS_WEIGHT_DECAY"])

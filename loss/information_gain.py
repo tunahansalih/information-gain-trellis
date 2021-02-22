@@ -12,12 +12,13 @@ def entropy_stable(prob_distribution):
 
 
 class InformationGainLoss:
-    def __init__(self, num_routes, num_classes, balance_coefficient=1.0):
+    def __init__(self, num_routes, num_classes, balance_coefficient=1.0, normalize=False):
         self.num_routes = num_routes
         self.num_classes = num_classes
         self.balance_coefficient = balance_coefficient
         self.max_information_gain = (self.balance_coefficient * math.log(self.num_routes)) + math.log(self.num_classes)
         self.min_information_gain = - math.log(self.num_classes * self.num_routes)
+        self.normalize = normalize
 
     @staticmethod
     def entropy(prob_distribution):
@@ -49,6 +50,9 @@ class InformationGainLoss:
         # Calculate the information gain
 
         information_gain = (self.balance_coefficient * entropy_p_n) + entropy_p_c - entropy_p_cn
-        information_gain = 1.0 - (information_gain - self.min_information_gain) / (
+        if self.normalize:
+            information_gain = 1.0 - (information_gain - self.min_information_gain) / (
                     self.max_information_gain - self.min_information_gain)
+        else:
+            information_gain = - information_gain
         return information_gain

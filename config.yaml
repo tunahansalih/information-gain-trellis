@@ -12,11 +12,15 @@ LR_INITIAL:
 MOMENTUM:
   value: 0.9
 DROPOUT_RATE:
-  value: 0.1
+  value: 0.35
 NUM_ROUTES_0:
   value: 2
 NUM_ROUTES_1:
   value: 4
+DECOUPLE_ROUTING_GRADIENTS:
+  value: False
+INFORMATION_GAIN_LOSS_NORMALIZATION:
+  value: False
 ROUTING_0_LOSS_WEIGHT:
   value: 1
 ROUTING_1_LOSS_WEIGHT:
@@ -40,10 +44,10 @@ TAU_INITIAL:
 TAU_DECAY_RATE:
   value: 0.9999
 INFORMATION_GAIN_BALANCE_COEFFICIENT:
-  value: 5.0
+  value: 5
 NO_ROUTING_STEPS:
   desc: Number of steps in the beginning of the training where no routing will be used
   value: 0
 RANDOM_ROUTING_STEPS:
   desc: Number of steps in the beginning of the training where random routing will be used
-  value: 0
+  value: 5000

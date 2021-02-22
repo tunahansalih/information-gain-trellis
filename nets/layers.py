@@ -9,13 +9,11 @@ class ConvolutionalBlock(layers.Layer):
         super(ConvolutionalBlock, self).__init__()
         self.conv = layers.Conv2D(filters, kernel_size, padding=padding)
         self.relu = layers.ReLU()
-        self.batch_norm = layers.BatchNormalization()
         self.pool = layers.MaxPool2D((2, 2))
 
     def call(self, inputs, is_training=True):
         x = self.conv(inputs)
         x = self.relu(x)
-        x = self.batch_norm(x)
         x = self.pool(x)
         return x
 
@@ -34,7 +32,7 @@ class InformationGainRoutingBlock(layers.Layer):
     def __init__(self, routes):
         super(InformationGainRoutingBlock, self).__init__()
         self.routes = routes
-        self.flatten = layers.GlobalAveragePooling2D()
+        self.flatten = layers.Flatten()
         self.fc0 = layers.Dense(64, activation=tf.nn.relu)
         self.routing = layers.Dense(self.routes, activation=None)
 

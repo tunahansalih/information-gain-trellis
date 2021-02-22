@@ -1,7 +1,8 @@
 from enum import Enum
 import tensorflow as tf
 
-from nets.layer import InformationGainRoutingBlock, RandomRoutingBlock, ConvolutionalBlock, RoutingMaskLayer
+from nets.layers import InformationGainRoutingBlock, RandomRoutingBlock, ConvolutionalBlock, RoutingMaskLayer
+from tensorflow.keras.layers import BatchNormalization
 
 
 class Routing(Enum):
@@ -16,19 +17,22 @@ class InformationGainRoutingModel(tf.keras.models.Model):
         super(InformationGainRoutingModel, self).__init__()
 
         self.conv_block_0 = ConvolutionalBlock(filters=config["CNN_0"], kernel_size=(5, 5), padding="same")
-
         if config["USE_ROUTING"]:
             self.routing_block_0 = InformationGainRoutingBlock(routes=config["NUM_ROUTES_0"])
             self.random_routing_block_0 = RandomRoutingBlock(routes=config["NUM_ROUTES_0"])
             self.routing_mask_layer_0 = RoutingMaskLayer(routes=config["NUM_ROUTES_0"])
+        self.batch_norm_0 = BatchNormalization()
 
         self.conv_block_1 = ConvolutionalBlock(filters=config["CNN_1"], kernel_size=(5, 5), padding="same")
         if config["USE_ROUTING"]:
             self.routing_block_1 = InformationGainRoutingBlock(routes=config["NUM_ROUTES_1"])
             self.random_routing_block_1 = RandomRoutingBlock(routes=config["NUM_ROUTES_1"])
             self.routing_mask_layer_1 = RoutingMaskLayer(routes=config["NUM_ROUTES_1"])
+        self.batch_norm_1 = BatchNormalization()
 
         self.conv_block_2 = ConvolutionalBlock(filters=config["CNN_2"], kernel_size=(5, 5), padding="same")
+        self.batch_norm_2 = BatchNormalization()
+
         self.flatten = tf.keras.layers.Flatten()
 
         self.fc_0 = tf.keras.layers.Dense(1024, activation=tf.nn.relu)
@@ -39,6 +43,7 @@ class InformationGainRoutingModel(tf.keras.models.Model):
 
     def call(self, inputs, routing: Routing, is_training=True):
         x = self.conv_block_0(inputs)
+        x = self.batch_norm_0(x, training=is_training)
 
         if routing == Routing.RANDOM_ROUTING:
             routing_0 = self.random_routing_block_0(x)
@@ -52,6 +57,7 @@ class InformationGainRoutingModel(tf.keras.models.Model):
         x = self.conv_block_1(x)
         if routing_0 is not None:
             x = self.routing_mask_layer_0(x, routing_0)
+        x = self.batch_norm_1(x, training=is_training)
 
         if routing == Routing.RANDOM_ROUTING:
             routing_1 = self.random_routing_block_1(x)
@@ -65,6 +71,7 @@ class InformationGainRoutingModel(tf.keras.models.Model):
         x = self.conv_block_2(x)
         if routing_1 is not None:
             x = self.routing_mask_layer_1(x, routing_1)
+        x = self.batch_norm_2(x, training=is_training)
 
         x = self.flatten(x)
 

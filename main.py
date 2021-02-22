@@ -24,9 +24,12 @@ elif wandb.config["DATASET"] == "cifar100":
     (train_x, train_y), (test_x, test_y) = tf.keras.datasets.cifar100.load_data()
     input_shape = (32, 32, 3)
     wandb.config["NUM_CLASSES"] = 100
+
 else:
     raise NotImplementedError
 
+wandb.config["NUM_TRAINING"] = len(train_x)
+wandb.config["NUM_VALIDATION"] = len(test_x)
 train_x = train_x / 255.0
 test_x = test_x / 255.0
 
@@ -40,14 +43,20 @@ dataset_validation = tf.data.Dataset.from_tensor_slices((test_x, test_y)).batch(
 model = InformationGainRoutingModel(wandb.config)
 
 loss_fn = tf.losses.CategoricalCrossentropy(from_logits=True)
-information_gain_0_loss_fn = InformationGainLoss(num_routes=wandb.config["NUM_ROUTES_0"],
-                                                 num_classes=wandb.config["NUM_CLASSES"],
-                                                 balance_coefficient=wandb.config[
-                                                     "INFORMATION_GAIN_BALANCE_COEFFICIENT"]).loss_fn
-information_gain_1_loss_fn = InformationGainLoss(num_routes=wandb.config["NUM_ROUTES_1"],
-                                                 num_classes=wandb.config["NUM_CLASSES"],
-                                                 balance_coefficient=wandb.config[
-                                                     "INFORMATION_GAIN_BALANCE_COEFFICIENT"]).loss_fn
+
+if wandb.config["USE_ROUTING"]:
+    information_gain_0_loss_fn = InformationGainLoss(num_routes=wandb.config["NUM_ROUTES_0"],
+                                                     num_classes=wandb.config["NUM_CLASSES"],
+                                                     balance_coefficient=wandb.config[
+                                                         "INFORMATION_GAIN_BALANCE_COEFFICIENT"],
+                                                     normalize=wandb.config[
+                                                         "INFORMATION_GAIN_LOSS_NORMALIZATION"]).loss_fn
+    information_gain_1_loss_fn = InformationGainLoss(num_routes=wandb.config["NUM_ROUTES_1"],
+                                                     num_classes=wandb.config["NUM_CLASSES"],
+                                                     balance_coefficient=wandb.config[
+                                                         "INFORMATION_GAIN_BALANCE_COEFFICIENT"],
+                                                     normalize=wandb.config[
+                                                         "INFORMATION_GAIN_LOSS_NORMALIZATION"]).loss_fn
 optimizer = tf.optimizers.SGD(lr=wandb.config["LR_INITIAL"], momentum=wandb.config["MOMENTUM"], nesterov=True)
 
 metrics = {"Route0": [tf.keras.metrics.MeanTensor() for i in range(wandb.config["NUM_CLASSES"])],
@@ -83,21 +92,45 @@ for epoch in range(wandb.config["NUM_EPOCHS"]):
             information_gain_loss_weight_0 = 0
             information_gain_loss_weight_1 = 0
             tau = 0
-        routing_0_loss = 0
-        routing_1_loss = 0
-        with tf.GradientTape() as tape:
+
+        with tf.GradientTape(persistent=True) as tape:
+            routing_0_loss = 0
+            routing_1_loss = 0
             route_0, route_1, logits = model(x_batch_train, routing=current_routing, is_training=True)
             classification_loss = loss_fn(y_batch_train, logits)
 
-            if current_routing == Routing.INFORMATION_GAIN_ROUTING:
+            if wandb.config["USE_ROUTING"] and current_routing == Routing.INFORMATION_GAIN_ROUTING:
                 route_0 = tf.nn.softmax(route_0 / tau, axis=-1)
                 route_1 = tf.nn.softmax(route_1 / tau, axis=-1)
                 routing_0_loss = information_gain_loss_weight_0 * information_gain_0_loss_fn(y_batch_train, route_0)
                 routing_1_loss = information_gain_loss_weight_1 * information_gain_1_loss_fn(y_batch_train, route_1)
             loss_value = classification_loss + routing_0_loss + routing_1_loss
-        grads = tape.gradient(loss_value, model.trainable_weights)
-        optimizer.apply_gradients(zip(grads, model.trainable_weights))
 
+        if wandb.config["USE_ROUTING"] and wandb.config["DECOUPLE_ROUTING_GRADIENTS"]:
+            model_trainable_weights = (model.conv_block_0.trainable_weights +
+                                       model.batch_norm_0.trainable_weights +
+                                       model.conv_block_1.trainable_weights +
+                                       model.batch_norm_1.trainable_weights +
+                                       model.conv_block_2.trainable_weights +
+                                       model.batch_norm_2.trainable_weights +
+                                       model.fc_0.trainable_weights +
+                                       model.fc_1.trainable_weights +
+                                       model.fc_2.trainable_weights)
+
+            grads = tape.gradient(classification_loss, model_trainable_weights)
+            optimizer.apply_gradients(zip(grads, model_trainable_weights))
+
+            if wandb.config["USE_ROUTING"] and current_routing == Routing.INFORMATION_GAIN_ROUTING:
+                grads = tape.gradient(routing_0_loss, model.routing_block_0.trainable_weights)
+                optimizer.apply_gradients(zip(grads, model.routing_block_0.trainable_weights))
+
+                grads = tape.gradient(routing_1_loss, model.routing_block_1.trainable_weights)
+                optimizer.apply_gradients(zip(grads, model.routing_block_1.trainable_weights))
+        else:
+            grads = tape.gradient(loss_value, model.trainable_weights)
+            optimizer.apply_gradients(zip(grads, model.trainable_weights))
+
+        del tape
         # Update metrics
         metrics["Accuracy"].update_state(y_batch_train, logits)
         metrics["TotalLoss"].update_state(loss_value)

@@ -12,7 +12,7 @@ LR_INITIAL:
 MOMENTUM:
   value: 0.9
 DROPOUT_RATE:
-  value: 0.45
+  value: 0.35
 CNN_0:
   value: 32
 CNN_1:
