@@ -44,13 +44,17 @@ class InformationGainRoutingBlock(layers.Layer):
 
 
 class RoutingMaskLayer(layers.Layer):
-    def __init__(self, routes):
+    def __init__(self, routes, gumbel=False):
         super(RoutingMaskLayer, self).__init__()
         self.routes = routes
+        self.gumbel = gumbel
 
-    def __call__(self, inputs, routing_inputs):
+    def __call__(self, inputs, routing_inputs, is_training=True):
         input_shape = tf.shape(inputs)
         route_width = int(inputs.shape[-1] / self.routes)
+
+        if self.gumbel and is_training:
+            routing_inputs = routing_inputs + self.sample_gumbel(tf.shape(routing_inputs))
 
         route = tf.argmax(routing_inputs, axis=-1)
         route = tf.one_hot(route, depth=self.routes)
@@ -62,16 +66,14 @@ class RoutingMaskLayer(layers.Layer):
         x = tf.transpose(x, [0, 2, 3, 1])
         return x
 
+    @staticmethod
+    def sample_gumbel(shape, eps=1e-20):
+        return -tf.math.log(-tf.math.log(tf.random.uniform(shape, minval=0, maxval=1) + eps) + eps)
 
-def sample_gumbel(shape, eps=1e-20):
-    U = tf.random.uniform(shape, minval=0, maxval=1)
-    return -tf.math.log(-tf.math.log(U + eps) + eps)
-
-
-def gumbel_softmax(logits, temperature, hard=False):
-    gumbel_softmax_sample = logits + sample_gumbel(tf.shape(logits))
-    y = tf.nn.softmax(gumbel_softmax_sample / temperature)
-    if hard:
-        y_hard = tf.cast(tf.equal(y, tf.reduce_max(y, 1, keepdims=True)), y.dtype)
-        y = tf.stop_gradient(y_hard - y) + y
-    return y
+    # def gumbel_softmax(self, logits, temperature, hard=False):
+    #     gumbel_softmax_sample = logits + self.sample_gumbel(tf.shape(logits))
+    #     y = tf.nn.softmax(gumbel_softmax_sample / temperature)
+    #     if hard:
+    #         y_hard = tf.cast(tf.equal(y, tf.reduce_max(y, 1, keepdims=True)), y.dtype)
+    #         y = tf.stop_gradient(y_hard - y) + y
+    #     return y

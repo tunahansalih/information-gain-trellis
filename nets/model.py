@@ -20,14 +20,16 @@ class InformationGainRoutingModel(tf.keras.models.Model):
         if config["USE_ROUTING"]:
             self.routing_block_0 = InformationGainRoutingBlock(routes=config["NUM_ROUTES_0"])
             self.random_routing_block_0 = RandomRoutingBlock(routes=config["NUM_ROUTES_0"])
-            self.routing_mask_layer_0 = RoutingMaskLayer(routes=config["NUM_ROUTES_0"])
+            self.routing_mask_layer_0 = RoutingMaskLayer(routes=config["NUM_ROUTES_0"],
+                                                         gumbel=config["ADD_GUMBEL_NOISE"])
         self.batch_norm_0 = BatchNormalization()
 
         self.conv_block_1 = ConvolutionalBlock(filters=config["CNN_1"], kernel_size=(5, 5), padding="same")
         if config["USE_ROUTING"]:
             self.routing_block_1 = InformationGainRoutingBlock(routes=config["NUM_ROUTES_1"])
             self.random_routing_block_1 = RandomRoutingBlock(routes=config["NUM_ROUTES_1"])
-            self.routing_mask_layer_1 = RoutingMaskLayer(routes=config["NUM_ROUTES_1"])
+            self.routing_mask_layer_1 = RoutingMaskLayer(routes=config["NUM_ROUTES_1"],
+                                                         gumbel=config["ADD_GUMBEL_NOISE"])
         self.batch_norm_1 = BatchNormalization()
 
         self.conv_block_2 = ConvolutionalBlock(filters=config["CNN_2"], kernel_size=(5, 5), padding="same")
@@ -56,7 +58,7 @@ class InformationGainRoutingModel(tf.keras.models.Model):
 
         x = self.conv_block_1(x)
         if routing_0 is not None:
-            x = self.routing_mask_layer_0(x, routing_0)
+            x = self.routing_mask_layer_0(x, routing_0, is_training=is_training)
         x = self.batch_norm_1(x, training=is_training)
 
         if routing == Routing.RANDOM_ROUTING:
@@ -70,7 +72,7 @@ class InformationGainRoutingModel(tf.keras.models.Model):
 
         x = self.conv_block_2(x)
         if routing_1 is not None:
-            x = self.routing_mask_layer_1(x, routing_1)
+            x = self.routing_mask_layer_1(x, routing_1, is_training=is_training)
         x = self.batch_norm_2(x, training=is_training)
 
         x = self.flatten(x)
