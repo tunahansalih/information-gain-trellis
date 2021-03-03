@@ -16,11 +16,11 @@ DROPOUT_RATE:
 NUM_ROUTES_0:
   value: 2
 NUM_ROUTES_1:
-  value: 4
+  value: 2
 DECOUPLE_ROUTING_GRADIENTS:
   value: False
 INFORMATION_GAIN_LOSS_NORMALIZATION:
-  value: False
+  value: True
 ROUTING_0_LOSS_WEIGHT:
   value: 1
 ROUTING_1_LOSS_WEIGHT:
@@ -40,11 +40,11 @@ CNN_1:
 CNN_2:
   value: 128
 TAU_INITIAL:
-  value: 1
+  value: 25
 TAU_DECAY_RATE:
-  value: 1
+  value: 0.9999
 ADD_GUMBEL_NOISE:
-  value: False
+  value: True
 INFORMATION_GAIN_BALANCE_COEFFICIENT:
   value: 5
 NO_ROUTING_STEPS:
@@ -52,4 +52,4 @@ NO_ROUTING_STEPS:
   value: 0
 RANDOM_ROUTING_STEPS:
   desc: Number of steps in the beginning of the training where random routing will be used
-  value: 0
+  value: 9600

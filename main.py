@@ -91,17 +91,17 @@ for epoch in range(wandb.config["NUM_EPOCHS"]):
         else:
             information_gain_loss_weight_0 = 0
             information_gain_loss_weight_1 = 0
-            tau = 0
+            tau = 1
 
         with tf.GradientTape(persistent=True) as tape:
             routing_0_loss = 0
             routing_1_loss = 0
-            route_0, route_1, logits = model(x_batch_train, routing=current_routing, is_training=True)
+            route_0, route_1, logits = model(x_batch_train, routing=current_routing, temperature=tau, is_training=True)
             classification_loss = loss_fn(y_batch_train, logits)
 
             if wandb.config["USE_ROUTING"] and current_routing == Routing.INFORMATION_GAIN_ROUTING:
-                route_0 = tf.nn.softmax(route_0 / tau, axis=-1)
-                route_1 = tf.nn.softmax(route_1 / tau, axis=-1)
+                route_0 = tf.nn.softmax(route_0, axis=-1)
+                route_1 = tf.nn.softmax(route_1, axis=-1)
                 routing_0_loss = information_gain_loss_weight_0 * information_gain_0_loss_fn(y_batch_train, route_0)
                 routing_1_loss = information_gain_loss_weight_1 * information_gain_1_loss_fn(y_batch_train, route_1)
             loss_value = classification_loss + routing_0_loss + routing_1_loss

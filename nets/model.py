@@ -43,14 +43,14 @@ class InformationGainRoutingModel(tf.keras.models.Model):
         self.do_1 = tf.keras.layers.Dropout(config["DROPOUT_RATE"])
         self.fc_2 = tf.keras.layers.Dense(config["NUM_CLASSES"])
 
-    def call(self, inputs, routing: Routing, is_training=True):
+    def call(self, inputs, routing: Routing, temperature=1, is_training=True):
         x = self.conv_block_0(inputs)
         x = self.batch_norm_0(x, training=is_training)
 
         if routing == Routing.RANDOM_ROUTING:
             routing_0 = self.random_routing_block_0(x)
         elif routing == Routing.INFORMATION_GAIN_ROUTING:
-            routing_0 = self.routing_block_0(x, is_training=is_training)
+            routing_0 = self.routing_block_0(x, is_training=is_training) / temperature
         elif routing == Routing.NO_ROUTING:
             routing_0 = None
         else:
@@ -64,7 +64,7 @@ class InformationGainRoutingModel(tf.keras.models.Model):
         if routing == Routing.RANDOM_ROUTING:
             routing_1 = self.random_routing_block_1(x)
         elif routing == Routing.INFORMATION_GAIN_ROUTING:
-            routing_1 = self.routing_block_1(x, is_training=is_training)
+            routing_1 = self.routing_block_1(x, is_training=is_training) / temperature
         elif routing == Routing.NO_ROUTING:
             routing_1 = None
         else:
