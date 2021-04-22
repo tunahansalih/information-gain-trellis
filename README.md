@@ -1,4 +1,4 @@
-This repo contains code for the initial works on Information Gain Jungle
+This repo contains code for the initial works on Information Gain Trellis
 
 # References
 
