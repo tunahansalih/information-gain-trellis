@@ -18,6 +18,7 @@ class ConvolutionalBlock(layers.Layer):
 
 class ResNetBlock(layers.Layer):
     def __init__(self, stack, res_block, num_filters):
+        super().__init__()
         self.stack = stack
         self.res_block = res_block
 
@@ -39,10 +40,10 @@ class ResNetBlock(layers.Layer):
                 batch_normalization=False,
             )
 
-    def call(self, inputs, is_training=True):
+    def call(self, inputs, training=True):
         x = inputs
-        y = self.resnet_layer_0(x, is_training=is_training)
-        y = self.resnet_layer_1(y, is_training=is_training)
+        y = self.resnet_layer_0(x, training=training)
+        y = self.resnet_layer_1(y, training=training)
         if self.stack > 0 and self.res_block == 0:
             x = self.resnet_layer_2(x)
         x = layers.add([x, y])
@@ -74,17 +75,17 @@ class ResNetLayer(layers.Layer):
             kernel_regularizer=regularizers.l2(1e-4),
         )
 
-    def call(self, inputs, is_training=True):
+    def call(self, inputs, training=True):
         x = inputs
         if self.conv_first:
             x = self.conv(x)
             if self.batch_normalization:
-                x = layers.BatchNormalization()(x, is_training=is_training)
+                x = layers.BatchNormalization()(x, training=training)
             if self.activation is not None:
                 x = layers.Activation(self.activation)(x)
         else:
             if self.batch_normalization:
-                x = layers.BatchNormalization()(x, is_training=is_training)
+                x = layers.BatchNormalization()(x, training=training)
             if self.activation is not None:
                 x = layers.Activation(self.activation)(x)
             x = self.conv(x)
@@ -96,7 +97,7 @@ class RandomRoutingBlock(layers.Layer):
         super(RandomRoutingBlock, self).__init__()
         self.routes = routes
 
-    def call(self, inputs, is_training=True):
+    def call(self, inputs, training=True):
         routing_x = tf.random.uniform([tf.shape(inputs)[0], self.routes])
         return routing_x
 
@@ -109,7 +110,7 @@ class InformationGainRoutingBlock(layers.Layer):
         self.fc0 = layers.Dense(64, activation=tf.nn.relu)
         self.routing = layers.Dense(self.routes, activation=None)
 
-    def call(self, inputs, is_training=True):
+    def call(self, inputs, training=True):
         x = self.flatten(inputs)
         x = self.fc0(x)
         x = self.routing(x)
@@ -122,11 +123,11 @@ class RoutingMaskLayer(layers.Layer):
         self.routes = routes
         self.gumbel = gumbel
 
-    def __call__(self, inputs, routing_inputs, is_training=True):
+    def __call__(self, inputs, routing_inputs, training=True):
         input_shape = tf.shape(inputs)
         route_width = int(inputs.shape[-1] / self.routes)
 
-        if self.gumbel and is_training:
+        if self.gumbel and training:
             routing_inputs = routing_inputs + self.sample_gumbel(
                 tf.shape(routing_inputs)
             )

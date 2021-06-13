@@ -67,14 +67,14 @@ class InformationGainRoutingModel(models.Model):
         self.do_1 = layers.Dropout(config["DROPOUT_RATE"])
         self.fc_2 = layers.Dense(config["NUM_CLASSES"])
 
-    def call(self, inputs, routing: Routing, temperature=1, is_training=True):
+    def call(self, inputs, routing: Routing, temperature=1, training=True):
         x = self.conv_block_0(inputs)
-        x = self.batch_norm_0(x, training=is_training)
+        x = self.batch_norm_0(x, training=training)
 
         if routing == Routing.RANDOM_ROUTING:
             routing_0 = self.random_routing_block_0(x)
         elif routing == Routing.INFORMATION_GAIN_ROUTING:
-            routing_0 = self.routing_block_0(x, is_training=is_training) / temperature
+            routing_0 = self.routing_block_0(x, training=training) / temperature
         elif routing == Routing.NO_ROUTING:
             routing_0 = None
         else:
@@ -82,13 +82,13 @@ class InformationGainRoutingModel(models.Model):
 
         x = self.conv_block_1(x)
         if routing_0 is not None:
-            x = self.routing_mask_layer_0(x, routing_0, is_training=is_training)
-        x = self.batch_norm_1(x, training=is_training)
+            x = self.routing_mask_layer_0(x, routing_0, training=training)
+        x = self.batch_norm_1(x, training=training)
 
         if routing == Routing.RANDOM_ROUTING:
             routing_1 = self.random_routing_block_1(x)
         elif routing == Routing.INFORMATION_GAIN_ROUTING:
-            routing_1 = self.routing_block_1(x, is_training=is_training) / temperature
+            routing_1 = self.routing_block_1(x, training=training) / temperature
         elif routing == Routing.NO_ROUTING:
             routing_1 = None
         else:
@@ -96,16 +96,16 @@ class InformationGainRoutingModel(models.Model):
 
         x = self.conv_block_2(x)
         if routing_1 is not None:
-            x = self.routing_mask_layer_1(x, routing_1, is_training=is_training)
-        x = self.batch_norm_2(x, training=is_training)
+            x = self.routing_mask_layer_1(x, routing_1, training=training)
+        x = self.batch_norm_2(x, training=training)
 
         x = self.flatten(x)
 
         x = self.fc_0(x)
-        if is_training:
+        if training:
             x = self.do_0(x)
         x = self.fc_1(x)
-        if is_training:
+        if training:
             x = self.do_1(x)
         x = self.fc_2(x)
 
@@ -146,17 +146,17 @@ class InformationGainRoutingLeNetModel(models.Model):
         )
         self.fc_1 = layers.Dense(config["NUM_CLASSES"])
 
-    def call(self, inputs, temperature=1, is_training=True):
+    def call(self, inputs, temperature=1, training=True):
         x = self.conv_block_0(inputs)
 
-        routing_0 = self.routing_block_0(x, is_training=is_training) / temperature
+        routing_0 = self.routing_block_0(x, training=training) / temperature
 
         routes_0 = []
         x_routed = 0
         for route in range(self.config["NUM_ROUTES_0"]):
             selection = (tf.argmax(routing_0, axis=-1) == route)[
-                :, tf.newaxis, tf.newaxis, tf.newaxis
-            ]
+                        :, tf.newaxis, tf.newaxis, tf.newaxis
+                        ]
             x_routed += tf.where(
                 condition=selection,
                 x=self.conv_blocks_1[route](x),
@@ -200,36 +200,56 @@ class InformationGainRoutingResNetModel(models.Model):
         self.routing_block_0 = InformationGainRoutingBlock(
             routes=self.config["NUM_ROUTES_0"]
         )
+        self.random_routing_block_0 = RandomRoutingBlock(
+            routes=config["NUM_ROUTES_0"]
+        )
         self.stack_1_blocks = []
         for res_block in range(num_res_blocks):
-            route_blocks = []
-            for _ in range(self.config["NUM_ROUTES_0"]):
-                route_blocks.append(
-                    ResNetBlock(
-                        stack=1,
-                        res_block=res_block,
-                        num_filters=(num_filters // self.config["NUM_ROUTES_0"]),
+            if config["USE_ROUTING"]:
+                route_blocks = []
+                for _ in range(self.config["NUM_ROUTES_0"]):
+                    route_blocks.append(
+                        ResNetBlock(
+                            stack=1,
+                            res_block=res_block,
+                            num_filters=(num_filters // self.config["NUM_ROUTES_0"]),
+                        )
                     )
+                self.stack_1_blocks.append(route_blocks)
+            else:
+                self.stack_1_blocks = ResNetBlock(
+                    stack=1,
+                    res_block=res_block,
+                    num_filters=num_filters,
                 )
-            self.stack_1_blocks.append(route_blocks)
         num_filters *= 2
 
         # Stack 2 and Routing 1
         self.routing_block_1 = InformationGainRoutingBlock(
             routes=config["NUM_ROUTES_1"]
         )
+        self.random_routing_block_1 = RandomRoutingBlock(
+            routes=config["NUM_ROUTES_1"]
+        )
         self.stack_2_blocks = []
         for res_block in range(num_res_blocks):
-            route_blocks = []
-            for _ in range(self.config["NUM_ROUTES_0"]):
-                route_blocks.append(
-                    ResNetBlock(
-                        stack=2,
-                        res_block=res_block,
-                        num_filters=(num_filters // self.config["NUM_ROUTES_1"]),
+            if config["USE_ROUTING"]:
+                route_blocks = []
+                for _ in range(self.config["NUM_ROUTES_0"]):
+                    route_blocks.append(
+                        ResNetBlock(
+                            stack=2,
+                            res_block=res_block,
+                            num_filters=(num_filters // self.config["NUM_ROUTES_1"]),
+                        )
                     )
+                self.stack_2_blocks.append(route_blocks)
+            else:
+                self.stack_2_blocks = ResNetBlock(
+                    stack=2,
+                    res_block=res_block,
+                    num_filters=(num_filters),
                 )
-            self.stack_2_blocks.append(route_blocks)
 
         self.pooling = layers.AveragePooling2D(pool_size=8)
         self.flatten = layers.Flatten()
@@ -239,41 +259,64 @@ class InformationGainRoutingResNetModel(models.Model):
             kernel_initializer="he_normal",
         )
 
-    def call(self, inputs, temperature=1, is_training=True):
-        x = self.resnet_layer_1(inputs, is_training=is_training)
+    def call(self, inputs, routing: Routing, temperature=1, training=True):
+        x = self.resnet_layer_1(inputs, training=training)
         for block in self.stack_0_blocks:
-            for layer in block:
-                x = layer(x, is_training=is_training)
+            x = block(x, training=training)
 
-        routing_0 = self.routing_block_0(x, is_training=is_training) / temperature
+        if routing == Routing.RANDOM_ROUTING:
+            routing_0 = self.random_routing_block_0(x)
+        elif routing == Routing.INFORMATION_GAIN_ROUTING:
+            routing_0 = self.routing_block_0(x, training=training) / temperature
+        elif routing == Routing.NO_ROUTING:
+            routing_0 = None
+        else:
+            routing_0 = None
 
-        x_output = tf.zeros_like(x)
-        for route in range(self.config["NUM_ROUTES_0"]):
-            selection = tf.where(tf.argmax(routing_0, axis=-1) == route)
-            x_routed = x[selection]
+        if routing is not None:
+            x_output = 0
+            for route in range(self.config["NUM_ROUTES_0"]):
+                selection = tf.where(tf.argmax(routing_0, axis=-1) == route)
+                x_routed = tf.gather_nd(x, selection)
+                for block in self.stack_1_blocks:
+                    x_routed = block[route](x_routed)
+                x_routed_shape = tf.shape(x_routed, out_type=tf.dtypes.int64)
+                x_output += tf.scatter_nd(selection, x_routed, tf.stack(
+                    [tf.shape(x, out_type=tf.dtypes.int64)[0], x_routed_shape[1], x_routed_shape[2],
+                     x_routed_shape[3]]))
+
+            x = x_output
+        else:
             for block in self.stack_1_blocks:
-                x_routed = 0
-                for route_block in block:
-                    x_routed = route_block[route](x_routed)
-            x_output += x_routed
-        
-        x = x_output
+                x = block(x, training=training)
 
-        routing_1 = self.routing_block_1(x, is_training=is_training) / temperature
+        if routing == Routing.RANDOM_ROUTING:
+            routing_1 = self.random_routing_block_1(x)
+        elif routing == Routing.INFORMATION_GAIN_ROUTING:
+            routing_1 = self.routing_block_1(x, training=training) / temperature
+        elif routing == Routing.NO_ROUTING:
+            routing_1 = None
+        else:
+            routing_1 = None
 
-        x_output = tf.zeros_like(x)
-        for route in range(self.config["NUM_ROUTES_1"]):
-            selection = tf.where(tf.argmax(routing_1, axis=-1) == route)
-            x_routed = x[selection]
+        if routing is not None:
+            x_output = 0
+            for route in range(self.config["NUM_ROUTES_1"]):
+                selection = tf.where(tf.argmax(routing_1, axis=-1) == route)
+                x_routed = tf.gather_nd(x, selection)
+                for block in self.stack_2_blocks:
+                    x_routed = block[route](x_routed)
+                x_routed_shape = tf.shape(x_routed, out_type=tf.dtypes.int64)
+                x_output += tf.scatter_nd(selection, x_routed, tf.stack(
+                    [tf.shape(x, out_type=tf.dtypes.int64)[0], x_routed_shape[1], x_routed_shape[2],
+                     x_routed_shape[3]]))
+
+            x = x_output
+        else:
             for block in self.stack_2_blocks:
-                x_routed = 0
-                for route_block in block:
-                    x_routed = route_block[route](x_routed)
-            x_output += x_routed
-
-        x = x_output
+                x = block(x, training=training)
 
         x = self.pooling(x)
         x = self.flatten(x)
         x = self.fc(x)
-        return x, routing_0, routing_1
+        return routing_0, routing_1, x

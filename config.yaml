@@ -1,6 +1,6 @@
 DATASET:
-  desc: fashion_mnist or cifar100
-  value: fashion_mnist
+  desc: fashion_mnist, cifar10 or cifar100
+  value: cifar10
 NUM_EPOCHS:
   value: 100
 BATCH_SIZE:
