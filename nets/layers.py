@@ -1,5 +1,5 @@
 import tensorflow as tf
-from tensorflow.keras import layers
+from tensorflow.keras import layers, regularizers
 
 
 class ConvolutionalBlock(layers.Layer):
@@ -26,13 +26,13 @@ class ResNetBlock(layers.Layer):
         else:
             strides = 1
 
-        self.resnet_layer_0 = ResNetLayer(num_filters=num_filters, strides=strides)
-        self.resnet_layer_1 = ResNetLayer(num_filters=num_filters, activation=None)
+        self.resnet_layer_0 = ResNetLayer(filters=num_filters, strides=strides)
+        self.resnet_layer_1 = ResNetLayer(filters=num_filters, activation=None)
         if stack > 0 and res_block == 0:  # first layer but not first stack
             # linear projection residual shortcut connection to match
             # changed dims
             self.resnet_layer_2 = ResNetLayer(
-                num_filters=num_filters,
+                filters=num_filters,
                 kernel_size=1,
                 strides=strides,
                 activation=None,
@@ -65,13 +65,13 @@ class ResNetLayer(layers.Layer):
         self.activation = activation
         self.batch_normalization = batch_normalization
         self.conv_first = conv_first
-        self.conv = tf.keras.layers.Conv2D(
+        self.conv = layers.Conv2D(
             filters,
             kernel_size=kernel_size,
             strides=strides,
             padding="same",
             kernel_initializer="he_normal",
-            kernel_regularizer=tf.keras.regularizers.l2(1e-4),
+            kernel_regularizer=regularizers.l2(1e-4),
         )
 
     def call(self, inputs, is_training=True):

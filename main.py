@@ -3,7 +3,7 @@ import tensorflow as tf
 
 from loss.information_gain import InformationGainLoss
 from loss.scheduling import StepDecay
-from nets.model import InformationGainRoutingModel, Routing
+from nets.model import InformationGainRoutingModel, InformationGainRoutingResNetModel, Routing
 from tqdm import tqdm
 
 import wandb
@@ -53,7 +53,7 @@ dataset_validation = tf.data.Dataset.from_tensor_slices((test_x, test_y)).batch(
     wandb.config["BATCH_SIZE"]
 )
 
-model = InformationGainRoutingModel(wandb.config)
+model = InformationGainRoutingResNetModel(wandb.config)
 
 loss_fn = tf.losses.CategoricalCrossentropy(from_logits=True)
 

@@ -1,6 +1,8 @@
 from enum import Enum
 import tensorflow as tf
 
+from tensorflow.keras import layers, models, regularizers
+
 from nets.layers import (
     InformationGainRoutingBlock,
     RandomRoutingBlock,
@@ -18,7 +20,7 @@ class Routing(Enum):
     INFORMATION_GAIN_ROUTING = 2
 
 
-class InformationGainRoutingModel(tf.keras.models.Model):
+class InformationGainRoutingModel(models.Model):
     def __init__(self, config):
         super(InformationGainRoutingModel, self).__init__()
 
@@ -57,13 +59,13 @@ class InformationGainRoutingModel(tf.keras.models.Model):
         )
         self.batch_norm_2 = BatchNormalization()
 
-        self.flatten = tf.keras.layers.Flatten()
+        self.flatten = layers.Flatten()
 
-        self.fc_0 = tf.keras.layers.Dense(1024, activation=tf.nn.relu)
-        self.do_0 = tf.keras.layers.Dropout(config["DROPOUT_RATE"])
-        self.fc_1 = tf.keras.layers.Dense(512, activation=tf.nn.relu)
-        self.do_1 = tf.keras.layers.Dropout(config["DROPOUT_RATE"])
-        self.fc_2 = tf.keras.layers.Dense(config["NUM_CLASSES"])
+        self.fc_0 = layers.Dense(1024, activation=tf.nn.relu)
+        self.do_0 = layers.Dropout(config["DROPOUT_RATE"])
+        self.fc_1 = layers.Dense(512, activation=tf.nn.relu)
+        self.do_1 = layers.Dropout(config["DROPOUT_RATE"])
+        self.fc_2 = layers.Dense(config["NUM_CLASSES"])
 
     def call(self, inputs, routing: Routing, temperature=1, is_training=True):
         x = self.conv_block_0(inputs)
@@ -110,7 +112,7 @@ class InformationGainRoutingModel(tf.keras.models.Model):
         return routing_0, routing_1, x
 
 
-class InformationGainRoutingLeNetModel(tf.keras.models.Model):
+class InformationGainRoutingLeNetModel(models.Model):
     def __init__(self, config):
         super(InformationGainRoutingLeNetModel, self).__init__()
 
@@ -119,12 +121,11 @@ class InformationGainRoutingLeNetModel(tf.keras.models.Model):
         self.conv_block_0 = ConvolutionalBlock(
             filters=config["CNN_0"],
             kernel_size=(5, 5),
-            l2_weight_decay=config["L2_WEIGHT_DECAY"],
             padding="same",
         )
 
         self.routing_block_0 = InformationGainRoutingBlock(
-            routes=config["NUM_ROUTES_0"], l2_weight_decay=config["L2_WEIGHT_DECAY"]
+            routes=config["NUM_ROUTES_0"]
         )
         self.conv_blocks_1 = []
         for i in range(config["NUM_ROUTES_0"]):
@@ -132,19 +133,18 @@ class InformationGainRoutingLeNetModel(tf.keras.models.Model):
                 ConvolutionalBlock(
                     filters=config["CNN_1"] // config["NUM_ROUTES_0"],
                     kernel_size=(5, 5),
-                    l2_weight_decay=config["L2_WEIGHT_DECAY"],
                     padding="same",
                 )
             )
 
-        self.flatten = tf.keras.layers.Flatten()
+        self.flatten = layers.Flatten()
 
-        self.fc_0 = tf.keras.layers.Dense(
+        self.fc_0 = layers.Dense(
             100,
             activation=tf.nn.relu,
-            kernel_regularizer=tf.keras.regularizers.l2(config["L2_WEIGHT_DECAY"]),
+            kernel_regularizer=regularizers.l2(config["L2_WEIGHT_DECAY"]),
         )
-        self.fc_1 = tf.keras.layers.Dense(config["NUM_CLASSES"])
+        self.fc_1 = layers.Dense(config["NUM_CLASSES"])
 
     def call(self, inputs, temperature=1, is_training=True):
         x = self.conv_block_0(inputs)
@@ -171,38 +171,109 @@ class InformationGainRoutingLeNetModel(tf.keras.models.Model):
         return routing_0, x
 
 
-class InformationGainRoutingResNetModel(tf.keras.models.Model):
+class InformationGainRoutingResNetModel(models.Model):
     def __init__(self, config):
         super().__init__()
 
         self.config = config
 
-        if (self.config.RESNET_DEPTH - 2) % 6 != 0:
+        if (self.config["RESNET_DEPTH"] - 2) % 6 != 0:
             raise ValueError("depth should be 6n+2 (eg 20, 32, 44 in [a])")
         # Start model definition.
-        num_filters = 16
-        num_res_blocks = int((self.config.RESNET_DEPTH - 2) / 6)
 
         self.resnet_layer_1 = ResNetLayer()
 
+        num_filters = 16
+        num_res_blocks = int((self.config["RESNET_DEPTH"] - 2) / 6)
+
         self.resnet_blocks = []
-        for stack in range(3):
-            for res_block in range(num_res_blocks):
-                resnet_block = ResNetBlock(stack, res_block, num_filters)
-                self.resnet_blocks.append(resnet_block)
-            num_filters *= 2
+        # Stack 0
+        self.stack_0_blocks = []
+        for res_block in range(num_res_blocks):
+            resnet_block = ResNetBlock(
+                stack=0, res_block=res_block, num_filters=num_filters
+            )
+            self.stack_0_blocks.append(resnet_block)
+        num_filters *= 2
 
-        self.pooling = tf.keras.layers.AveragePooling2D(pool_size=8)
-        self.flatten = tf.keras.layers.Flatten()
-        self.fc = tf.keras.layers.Dense(self.config["NUM_CLASSES"],
-                    activation='softmax',
-                    kernel_initializer='he_normal')
+        # Stack 1 and Routing 0
+        self.routing_block_0 = InformationGainRoutingBlock(
+            routes=self.config["NUM_ROUTES_0"]
+        )
+        self.stack_1_blocks = []
+        for res_block in range(num_res_blocks):
+            route_blocks = []
+            for _ in range(self.config["NUM_ROUTES_0"]):
+                route_blocks.append(
+                    ResNetBlock(
+                        stack=1,
+                        res_block=res_block,
+                        num_filters=(num_filters // self.config["NUM_ROUTES_0"]),
+                    )
+                )
+            self.stack_1_blocks.append(route_blocks)
+        num_filters *= 2
 
-    def call(self, inputs, is_training):
+        # Stack 2 and Routing 1
+        self.routing_block_1 = InformationGainRoutingBlock(
+            routes=config["NUM_ROUTES_1"]
+        )
+        self.stack_2_blocks = []
+        for res_block in range(num_res_blocks):
+            route_blocks = []
+            for _ in range(self.config["NUM_ROUTES_0"]):
+                route_blocks.append(
+                    ResNetBlock(
+                        stack=2,
+                        res_block=res_block,
+                        num_filters=(num_filters // self.config["NUM_ROUTES_1"]),
+                    )
+                )
+            self.stack_2_blocks.append(route_blocks)
+
+        self.pooling = layers.AveragePooling2D(pool_size=8)
+        self.flatten = layers.Flatten()
+        self.fc = layers.Dense(
+            self.config["NUM_CLASSES"],
+            activation="softmax",
+            kernel_initializer="he_normal",
+        )
+
+    def call(self, inputs, temperature=1, is_training=True):
         x = self.resnet_layer_1(inputs, is_training=is_training)
-        for block in self.resnet_blocks:
-            x = block(x, is_training=is_training)
+        for block in self.stack_0_blocks:
+            for layer in block:
+                x = layer(x, is_training=is_training)
+
+        routing_0 = self.routing_block_0(x, is_training=is_training) / temperature
+
+        x_output = tf.zeros_like(x)
+        for route in range(self.config["NUM_ROUTES_0"]):
+            selection = tf.where(tf.argmax(routing_0, axis=-1) == route)
+            x_routed = x[selection]
+            for block in self.stack_1_blocks:
+                x_routed = 0
+                for route_block in block:
+                    x_routed = route_block[route](x_routed)
+            x_output += x_routed
+        
+        x = x_output
+
+        routing_1 = self.routing_block_1(x, is_training=is_training) / temperature
+
+        x_output = tf.zeros_like(x)
+        for route in range(self.config["NUM_ROUTES_1"]):
+            selection = tf.where(tf.argmax(routing_1, axis=-1) == route)
+            x_routed = x[selection]
+            for block in self.stack_2_blocks:
+                x_routed = 0
+                for route_block in block:
+                    x_routed = route_block[route](x_routed)
+            x_output += x_routed
+
+        x = x_output
+
         x = self.pooling(x)
         x = self.flatten(x)
         x = self.fc(x)
-        return x
+        return x, routing_0, routing_1
