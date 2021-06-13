@@ -33,6 +33,9 @@ ROUTING_LOSS_WEIGHT_DECAY:
 ROUTING_EARLY_STOPPING_STEP:
   desc: Number of steps before stopping training of the routing layers, if EarlyStopping decay method is used
   value: 0
+
+RESNET_DEPTH:
+  value: 20
 CNN_0:
   value: 32
 CNN_1:
