@@ -5,7 +5,7 @@ from nets.model import Routing
 def routing_method(step, config):
     if config["USE_ROUTING"]:
         if 0 < config["NO_ROUTING_STEPS"] and step < config["RANDOM_ROUTING_STEPS"]:
-            return Routing.NO_ROUTING
+            return None
         elif (
             0 < config["RANDOM_ROUTING_STEPS"] and step < config["RANDOM_ROUTING_STEPS"]
         ):
@@ -13,7 +13,7 @@ def routing_method(step, config):
         else:
             return Routing.INFORMATION_GAIN_ROUTING
     else:
-        return Routing.NO_ROUTING
+        return None
 
 
 def current_learning_rate(step, config):

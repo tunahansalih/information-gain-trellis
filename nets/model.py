@@ -217,11 +217,12 @@ class InformationGainRoutingResNetModel(models.Model):
                     )
                 self.stack_1_blocks.append(route_blocks)
             else:
-                self.stack_1_blocks = ResNetBlock(
+                stack_1_block = ResNetBlock(
                     stack=1,
                     res_block=res_block,
                     num_filters=num_filters,
                 )
+                self.stack_1_blocks.append(stack_1_block)
         num_filters *= 2
 
         # Stack 2 and Routing 1
@@ -245,17 +246,18 @@ class InformationGainRoutingResNetModel(models.Model):
                     )
                 self.stack_2_blocks.append(route_blocks)
             else:
-                self.stack_2_blocks = ResNetBlock(
+                stack_2_block = ResNetBlock(
                     stack=2,
                     res_block=res_block,
                     num_filters=num_filters,
                 )
+                self.stack_2_blocks.append(stack_2_block)
 
         self.pooling = layers.AveragePooling2D(pool_size=8)
         self.flatten = layers.Flatten()
         self.fc = layers.Dense(
             self.config["NUM_CLASSES"],
-            activation="softmax",
+            activation=None,
             kernel_initializer="he_normal",
         )
 
