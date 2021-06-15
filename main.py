@@ -45,8 +45,8 @@ wandb.config["NUM_VALIDATION"] = len(test_x)
 train_x = train_x / 255.0
 test_x = test_x / 255.0
 
-train_y = tf.keras.utils.to_categorical(train_y, wandb.config["NUM_CLASSES"])
-test_y = tf.keras.utils.to_categorical(test_y, wandb.config["NUM_CLASSES"])
+train_y = tf.keras.utils.to_categorical(train_y.flatten(), wandb.config["NUM_CLASSES"])
+test_y = tf.keras.utils.to_categorical(test_y.flatten(), wandb.config["NUM_CLASSES"])
 
 dataset_train = (
     tf.data.Dataset.from_tensor_slices((train_x, train_y))
@@ -74,8 +74,10 @@ if wandb.config["USE_ROUTING"]:
         balance_coefficient=wandb.config["INFORMATION_GAIN_BALANCE_COEFFICIENT"],
         normalize=wandb.config["INFORMATION_GAIN_LOSS_NORMALIZATION"],
     ).loss_fn
-optimizer = tf.optimizers.SGD(
-    lr=wandb.config["LR_INITIAL"], momentum=wandb.config["MOMENTUM"], nesterov=True
+optimizer = tf.optimizers.Adam(
+    lr=wandb.config["LR_INITIAL"],
+    # momentum=wandb.config["MOMENTUM"],
+    # nesterov=True
 )
 
 metrics = {
@@ -103,7 +105,7 @@ for epoch in range(wandb.config["NUM_EPOCHS"]):
     print(f"Epoch {epoch}")
 
     reset_metrics(metrics)
-    progress_bar = tqdm(dataset_train)
+    progress_bar = tqdm(dataset_train, )
 
     for i, (x_batch_train, y_batch_train) in enumerate(progress_bar):
 

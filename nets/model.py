@@ -248,7 +248,7 @@ class InformationGainRoutingResNetModel(models.Model):
                 self.stack_2_blocks = ResNetBlock(
                     stack=2,
                     res_block=res_block,
-                    num_filters=(num_filters),
+                    num_filters=num_filters,
                 )
 
         self.pooling = layers.AveragePooling2D(pool_size=8)
