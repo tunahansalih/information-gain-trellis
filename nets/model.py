@@ -155,8 +155,8 @@ class InformationGainRoutingLeNetModel(models.Model):
         x_routed = 0
         for route in range(self.config["NUM_ROUTES_0"]):
             selection = (tf.argmax(routing_0, axis=-1) == route)[
-                        :, tf.newaxis, tf.newaxis, tf.newaxis
-                        ]
+                :, tf.newaxis, tf.newaxis, tf.newaxis
+            ]
             x_routed += tf.where(
                 condition=selection,
                 x=self.conv_blocks_1[route](x),
@@ -176,17 +176,14 @@ class InformationGainRoutingResNetModel(models.Model):
         super().__init__()
 
         self.config = config
-
         if (self.config["RESNET_DEPTH"] - 2) % 6 != 0:
             raise ValueError("depth should be 6n+2 (eg 20, 32, 44 in [a])")
-        # Start model definition.
 
         self.resnet_layer_1 = ResNetLayer()
 
         num_filters = 16
         num_res_blocks = int((self.config["RESNET_DEPTH"] - 2) / 6)
 
-        self.resnet_blocks = []
         # Stack 0
         self.stack_0_blocks = []
         for res_block in range(num_res_blocks):
@@ -200,9 +197,7 @@ class InformationGainRoutingResNetModel(models.Model):
         self.routing_block_0 = InformationGainRoutingBlock(
             routes=self.config["NUM_ROUTES_0"]
         )
-        self.random_routing_block_0 = RandomRoutingBlock(
-            routes=config["NUM_ROUTES_0"]
-        )
+        self.random_routing_block_0 = RandomRoutingBlock(routes=config["NUM_ROUTES_0"])
         self.stack_1_blocks = []
         for res_block in range(num_res_blocks):
             if config["USE_ROUTING"]:
@@ -217,21 +212,19 @@ class InformationGainRoutingResNetModel(models.Model):
                     )
                 self.stack_1_blocks.append(route_blocks)
             else:
-                stack_1_block = ResNetBlock(
+                resnet_block = ResNetBlock(
                     stack=1,
                     res_block=res_block,
                     num_filters=num_filters,
                 )
-                self.stack_1_blocks.append(stack_1_block)
+                self.stack_1_blocks.append(resnet_block)
         num_filters *= 2
 
         # Stack 2 and Routing 1
         self.routing_block_1 = InformationGainRoutingBlock(
             routes=config["NUM_ROUTES_1"]
         )
-        self.random_routing_block_1 = RandomRoutingBlock(
-            routes=config["NUM_ROUTES_1"]
-        )
+        self.random_routing_block_1 = RandomRoutingBlock(routes=config["NUM_ROUTES_1"])
         self.stack_2_blocks = []
         for res_block in range(num_res_blocks):
             if config["USE_ROUTING"]:
@@ -246,12 +239,12 @@ class InformationGainRoutingResNetModel(models.Model):
                     )
                 self.stack_2_blocks.append(route_blocks)
             else:
-                stack_2_block = ResNetBlock(
+                resnet_block = ResNetBlock(
                     stack=2,
                     res_block=res_block,
                     num_filters=num_filters,
                 )
-                self.stack_2_blocks.append(stack_2_block)
+                self.stack_2_blocks.append(resnet_block)
 
         self.pooling = layers.AveragePooling2D(pool_size=8)
         self.flatten = layers.Flatten()
@@ -276,21 +269,9 @@ class InformationGainRoutingResNetModel(models.Model):
             routing_0 = None
 
         if routing is not None:
-            x_output = 0
-            for route in range(self.config["NUM_ROUTES_0"]):
-                selection = tf.where(tf.argmax(routing_0, axis=-1) == route)
-                x_routed = tf.gather_nd(x, selection)
-                for block in self.stack_1_blocks:
-                    x_routed = block[route](x_routed)
-                x_routed_shape = tf.shape(x_routed, out_type=tf.dtypes.int64)
-                x_output += tf.scatter_nd(selection, x_routed, tf.stack(
-                    [tf.shape(x, out_type=tf.dtypes.int64)[0], x_routed_shape[1], x_routed_shape[2],
-                     x_routed_shape[3]]))
-
-            x = x_output
+            x = self.apply_routing(x, routing_0, training)
         else:
-            for block in self.stack_1_blocks:
-                x = block(x, training=training)
+            x = self.apply_block(x, self.stack_1_blocks, training)
 
         if routing == Routing.RANDOM_ROUTING:
             routing_1 = self.random_routing_block_1(x)
@@ -302,23 +283,40 @@ class InformationGainRoutingResNetModel(models.Model):
             routing_1 = None
 
         if routing is not None:
-            x_output = 0
-            for route in range(self.config["NUM_ROUTES_1"]):
-                selection = tf.where(tf.argmax(routing_1, axis=-1) == route)
-                x_routed = tf.gather_nd(x, selection)
-                for block in self.stack_2_blocks:
-                    x_routed = block[route](x_routed)
-                x_routed_shape = tf.shape(x_routed, out_type=tf.dtypes.int64)
-                x_output += tf.scatter_nd(selection, x_routed, tf.stack(
-                    [tf.shape(x, out_type=tf.dtypes.int64)[0], x_routed_shape[1], x_routed_shape[2],
-                     x_routed_shape[3]]))
-
-            x = x_output
+            x = self.apply_routing(x, routing_1, training=training)
         else:
-            for block in self.stack_2_blocks:
-                x = block(x, training=training)
+            x = self.apply_block(x, self.stack_2_blocks, training)
 
         x = self.pooling(x)
         x = self.flatten(x)
         x = self.fc(x)
         return routing_0, routing_1, x
+
+    @tf.function
+    def apply_block(self, x, blocks, training):
+        for block in blocks:
+            x = block(x, training=training)
+        return x
+
+    @tf.function
+    def apply_routing(self, x, routing, training):
+        x_output = 0
+        for route in range(self.config["NUM_ROUTES_0"]):
+            selection = tf.where(tf.argmax(routing, axis=-1) == route)
+            x_routed = tf.gather_nd(x, selection)
+            for block in self.stack_1_blocks:
+                x_routed = block[route](x_routed, training=training)
+            x_routed_shape = tf.shape(x_routed, out_type=tf.dtypes.int64)
+            x_output += tf.scatter_nd(
+                selection,
+                x_routed,
+                tf.stack(
+                    [
+                        tf.shape(x, out_type=tf.dtypes.int64)[0],
+                        x_routed_shape[1],
+                        x_routed_shape[2],
+                        x_routed_shape[3],
+                    ]
+                ),
+            )
+        return x_output

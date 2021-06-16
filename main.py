@@ -3,7 +3,7 @@ import tensorflow as tf
 
 from loss.information_gain import InformationGainLoss
 from loss.scheduling import StepDecay
-from nets.model import InformationGainRoutingModel, InformationGainRoutingResNetModel, Routing
+from nets.model import InformationGainRoutingResNetModel, Routing
 from tqdm import tqdm
 
 import wandb
@@ -16,8 +16,8 @@ from utils.helpers import (
 )
 
 wandb.init(
-    project='information-gain-routing-network-cifar10',
-    entity='tunahansalih',
+    project="information-gain-routing-network-cifar10",
+    entity="tunahansalih",
     config="config.yaml",
 )
 print(wandb.config)
@@ -50,8 +50,8 @@ test_y = tf.keras.utils.to_categorical(test_y.flatten(), wandb.config["NUM_CLASS
 
 dataset_train = (
     tf.data.Dataset.from_tensor_slices((train_x, train_y))
-        .shuffle(60000, seed=3333)
-        .batch(wandb.config["BATCH_SIZE"])
+    .shuffle(100000, seed=3333)
+    .batch(wandb.config["BATCH_SIZE"])
 )
 dataset_validation = tf.data.Dataset.from_tensor_slices((test_x, test_y)).batch(
     wandb.config["BATCH_SIZE"]
@@ -105,7 +105,9 @@ for epoch in range(wandb.config["NUM_EPOCHS"]):
     print(f"Epoch {epoch}")
 
     reset_metrics(metrics)
-    progress_bar = tqdm(dataset_train, )
+    progress_bar = tqdm(
+        dataset_train,
+    )
 
     for i, (x_batch_train, y_batch_train) in enumerate(progress_bar):
 
@@ -134,40 +136,40 @@ for epoch in range(wandb.config["NUM_EPOCHS"]):
             classification_loss = loss_fn(y_batch_train, logits)
 
             if (
-                    wandb.config["USE_ROUTING"]
-                    and current_routing == Routing.INFORMATION_GAIN_ROUTING
+                wandb.config["USE_ROUTING"]
+                and current_routing == Routing.INFORMATION_GAIN_ROUTING
             ):
                 route_0 = tf.nn.softmax(route_0, axis=-1)
                 route_1 = tf.nn.softmax(route_1, axis=-1)
                 routing_0_loss = (
-                        information_gain_loss_weight_0
-                        * information_gain_0_loss_fn(y_batch_train, route_0)
+                    information_gain_loss_weight_0
+                    * information_gain_0_loss_fn(y_batch_train, route_0)
                 )
                 routing_1_loss = (
-                        information_gain_loss_weight_1
-                        * information_gain_1_loss_fn(y_batch_train, route_1)
+                    information_gain_loss_weight_1
+                    * information_gain_1_loss_fn(y_batch_train, route_1)
                 )
             loss_value = classification_loss + routing_0_loss + routing_1_loss
 
         if wandb.config["USE_ROUTING"] and wandb.config["DECOUPLE_ROUTING_GRADIENTS"]:
             model_trainable_weights = (
-                    model.conv_block_0.trainable_weights
-                    + model.batch_norm_0.trainable_weights
-                    + model.conv_block_1.trainable_weights
-                    + model.batch_norm_1.trainable_weights
-                    + model.conv_block_2.trainable_weights
-                    + model.batch_norm_2.trainable_weights
-                    + model.fc_0.trainable_weights
-                    + model.fc_1.trainable_weights
-                    + model.fc_2.trainable_weights
+                model.conv_block_0.trainable_weights
+                + model.batch_norm_0.trainable_weights
+                + model.conv_block_1.trainable_weights
+                + model.batch_norm_1.trainable_weights
+                + model.conv_block_2.trainable_weights
+                + model.batch_norm_2.trainable_weights
+                + model.fc_0.trainable_weights
+                + model.fc_1.trainable_weights
+                + model.fc_2.trainable_weights
             )
 
             grads = tape.gradient(classification_loss, model_trainable_weights)
             optimizer.apply_gradients(zip(grads, model_trainable_weights))
 
             if (
-                    wandb.config["USE_ROUTING"]
-                    and current_routing == Routing.INFORMATION_GAIN_ROUTING
+                wandb.config["USE_ROUTING"]
+                and current_routing == Routing.INFORMATION_GAIN_ROUTING
             ):
                 grads = tape.gradient(
                     routing_0_loss, model.routing_block_0.trainable_weights
@@ -188,7 +190,9 @@ for epoch in range(wandb.config["NUM_EPOCHS"]):
 
         del tape
         # Update metrics
-        metrics["Accuracy"].update_state(y_batch_train, logits)
+        metrics["Accuracy"].update_state(
+            tf.argmax(y_batch_train, axis=-1), tf.argmax(logits, axis=-1)
+        )
         metrics["TotalLoss"].update_state(loss_value)
         metrics["Routing0Loss"].update_state(routing_0_loss)
         metrics["Routing1Loss"].update_state(routing_1_loss)
@@ -202,23 +206,37 @@ for epoch in range(wandb.config["NUM_EPOCHS"]):
 
         step += 1
 
-    wandb.log(
-        {
-            "Training/TotalLoss": metrics["TotalLoss"].result().numpy(),
-            "Training/ClassificationLoss": metrics["ClassificationLoss"]
+    if wandb.config["USE_ROUTING"]:
+        wandb.log(
+            {
+                "Training/TotalLoss": metrics["TotalLoss"].result().numpy(),
+                "Training/ClassificationLoss": metrics["ClassificationLoss"]
                 .result()
                 .numpy(),
-            "Training/Routing_0_Loss": metrics["Routing0Loss"].result().numpy(),
-            "Training/Routing_1_Loss": metrics["Routing1Loss"].result().numpy(),
-            "Training/Routing_0_Loss_Weight": information_gain_loss_weight_0,
-            "Training/Routing_1_Loss_Weight": information_gain_loss_weight_1,
-            "Training/Accuracy": metrics["Accuracy"].result().numpy(),
-            "Training/SoftmaxSmoothing": tau,
-            "Training/LearningRate": current_lr,
-            "Training/Routing": current_routing.value,
-        },
-        step=step - 1,
-    )
+                "Training/Routing_0_Loss": metrics["Routing0Loss"].result().numpy(),
+                "Training/Routing_1_Loss": metrics["Routing1Loss"].result().numpy(),
+                "Training/Routing_0_Loss_Weight": information_gain_loss_weight_0,
+                "Training/Routing_1_Loss_Weight": information_gain_loss_weight_1,
+                "Training/Accuracy": metrics["Accuracy"].result().numpy(),
+                "Training/SoftmaxSmoothing": tau,
+                "Training/LearningRate": current_lr,
+                "Training/Routing": current_routing.value,
+            },
+            step=step - 1,
+        )
+    else:
+        wandb.log(
+            {
+                "Training/TotalLoss": metrics["TotalLoss"].result().numpy(),
+                "Training/ClassificationLoss": metrics["ClassificationLoss"]
+                .result()
+                .numpy(),
+                "Training/Accuracy": metrics["Accuracy"].result().numpy(),
+                "Training/SoftmaxSmoothing": tau,
+                "Training/LearningRate": current_lr,
+            },
+            step=step - 1,
+        )
     # Validation
     if (epoch + 1) % 10 == 0 or (epoch + 1) == wandb.config["NUM_EPOCHS"]:
         reset_metrics(metrics)
@@ -228,18 +246,20 @@ for epoch in range(wandb.config["NUM_EPOCHS"]):
             route_0, route_1, logits = model(
                 x_batch_val, routing=current_routing, training=False
             )
+            y_batch_val_index = tf.argmax(y_batch_val, axis=-1)
+            y_pred_batch_val_index = tf.argmax(logits, axis=-1)
             if current_routing in [
                 Routing.RANDOM_ROUTING,
                 Routing.INFORMATION_GAIN_ROUTING,
             ]:
                 route_0 = tf.nn.softmax(route_0, axis=-1)
                 route_1 = tf.nn.softmax(route_1, axis=-1)
-                y_batch_val_index = tf.argmax(y_batch_val, axis=-1)
+
                 for c, r_0, r_1 in zip(y_batch_val_index, route_0, route_1):
                     metrics["Route0"][c].update_state(r_0)
                     metrics["Route1"][c].update_state(r_1)
 
-            metrics["Accuracy"].update_state(y_batch_val, logits)
+            metrics["Accuracy"].update_state(y_batch_val_index, y_pred_batch_val_index)
 
             progress_bar.set_description(
                 f"Validation Accuracy: %{metrics['Accuracy'].result().numpy() * 100:.2f}"

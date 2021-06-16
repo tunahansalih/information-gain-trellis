@@ -39,6 +39,8 @@ class ResNetBlock(layers.Layer):
                 activation=None,
                 batch_normalization=False,
             )
+        self.addition = layers.Add()
+        self.relu = layers.Activation("relu")
 
     def call(self, inputs, training=True):
         x = inputs
@@ -46,8 +48,8 @@ class ResNetBlock(layers.Layer):
         y = self.resnet_layer_1(y, training=training)
         if self.stack > 0 and self.res_block == 0:
             x = self.resnet_layer_2(x)
-        x = layers.add([x, y])
-        x = layers.Activation("relu")(x)
+        x = self.addition([x, y])
+        x = self.relu(x)
         return x
 
 
@@ -74,20 +76,22 @@ class ResNetLayer(layers.Layer):
             kernel_initializer="he_normal",
             kernel_regularizer=regularizers.l2(1e-4),
         )
+        self.batch_norm_layer = layers.BatchNormalization()
+        self.activation = layers.Activation(self.activation)
 
     def call(self, inputs, training=True):
         x = inputs
         if self.conv_first:
             x = self.conv(x)
             if self.batch_normalization:
-                x = layers.BatchNormalization()(x, training=training)
+                x = self.batch_norm_layer(x, training=training)
             if self.activation is not None:
-                x = layers.Activation(self.activation)(x)
+                x = self.activation(x)
         else:
             if self.batch_normalization:
-                x = layers.BatchNormalization()(x, training=training)
+                x = self.batch_norm_layer(x, training=training)
             if self.activation is not None:
-                x = layers.Activation(self.activation)(x)
+                x = self.activation(x)
             x = self.conv(x)
         return x
 
