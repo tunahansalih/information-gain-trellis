@@ -9,7 +9,7 @@ class ConvolutionalBlock(layers.Layer):
         self.relu = layers.ReLU()
         self.pool = layers.MaxPool2D((2, 2))
 
-    def call(self, inputs, is_training=True):
+    def call(self, inputs, training=True):
         x = self.conv(inputs)
         x = self.relu(x)
         x = self.pool(x)
@@ -55,13 +55,13 @@ class ResNetBlock(layers.Layer):
 
 class ResNetLayer(layers.Layer):
     def __init__(
-        self,
-        filters=16,
-        kernel_size=3,
-        strides=1,
-        activation="relu",
-        batch_normalization=True,
-        conv_first=True,
+            self,
+            filters=16,
+            kernel_size=3,
+            strides=1,
+            activation="relu",
+            batch_normalization=True,
+            conv_first=True,
     ):
         super().__init__()
 
@@ -97,22 +97,22 @@ class ResNetLayer(layers.Layer):
 
 
 class RandomRoutingBlock(layers.Layer):
-    def __init__(self, routes):
+    def __init__(self, num_routes):
         super(RandomRoutingBlock, self).__init__()
-        self.routes = routes
+        self.num_routes = num_routes
 
     def call(self, inputs, training=True):
-        routing_x = tf.random.uniform([tf.shape(inputs)[0], self.routes])
+        routing_x = tf.random.uniform([tf.shape(inputs)[0], self.num_routes])
         return routing_x
 
 
 class InformationGainRoutingBlock(layers.Layer):
-    def __init__(self, routes):
+    def __init__(self, num_routes):
         super(InformationGainRoutingBlock, self).__init__()
-        self.routes = routes
+        self.num_routes = num_routes
         self.flatten = layers.Flatten()
         self.fc0 = layers.Dense(64, activation=tf.nn.relu)
-        self.routing = layers.Dense(self.routes, activation=None)
+        self.routing = layers.Dense(self.num_routes, activation=None)
 
     def call(self, inputs, training=True):
         x = self.flatten(inputs)
@@ -148,17 +148,3 @@ class RoutingMaskLayer(layers.Layer):
         )
         x = tf.transpose(x, [0, 2, 3, 1])
         return x
-
-    @staticmethod
-    def sample_gumbel(shape, eps=1e-20):
-        return -tf.math.log(
-            -tf.math.log(tf.random.uniform(shape, minval=0, maxval=1) + eps) + eps
-        )
-
-    # def gumbel_softmax(self, logits, temperature, hard=False):
-    #     gumbel_softmax_sample = logits + self.sample_gumbel(tf.shape(logits))
-    #     y = tf.nn.softmax(gumbel_softmax_sample / temperature)
-    #     if hard:
-    #         y_hard = tf.cast(tf.equal(y, tf.reduce_max(y, 1, keepdims=True)), y.dtype)
-    #         y = tf.stop_gradient(y_hard - y) + y
-    #     return y

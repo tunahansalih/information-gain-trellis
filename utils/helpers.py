@@ -4,11 +4,7 @@ from nets.model import Routing
 
 def routing_method(step, config):
     if config["USE_ROUTING"]:
-        if 0 < config["NO_ROUTING_STEPS"] and step < config["RANDOM_ROUTING_STEPS"]:
-            return None
-        elif (
-            0 < config["RANDOM_ROUTING_STEPS"] and step < config["RANDOM_ROUTING_STEPS"]
-        ):
+        if 0 < config["RANDOM_ROUTING_STEPS"] and step < config["RANDOM_ROUTING_STEPS"]:
             return Routing.RANDOM_ROUTING
         else:
             return Routing.INFORMATION_GAIN_ROUTING
@@ -17,7 +13,7 @@ def routing_method(step, config):
 
 
 def current_learning_rate(step, config):
-    if step < 15000:
+    if step < 30 * config["NUM_TRAINING"] / config["BATCH_SIZE"]:
         return config["LR_INITIAL"]
     elif step < 30000:
         return config["LR_INITIAL"] / 2
@@ -27,41 +23,30 @@ def current_learning_rate(step, config):
         return config["LR_INITIAL"] / 40
 
 
-def weight_scheduler(config):
+def information_gain_weight_scheduler(config):
     if config["WEIGHT_DECAY_METHOD"] == "TimeBasedDecay":
-        weight_scheduler_0 = TimeBasedDecay(
+        weight_scheduler = TimeBasedDecay(
             config["ROUTING_0_LOSS_WEIGHT"], config["ROUTING_LOSS_WEIGHT_DECAY"]
         )
-        weight_scheduler_1 = TimeBasedDecay(
-            config["ROUTING_1_LOSS_WEIGHT"], config["ROUTING_LOSS_WEIGHT_DECAY"]
-        )
+
     elif config["WEIGHT_DECAY_METHOD"] == "StepDecay":
-        weight_scheduler_0 = StepDecay(
+        weight_scheduler = StepDecay(
             config["ROUTING_0_LOSS_WEIGHT"],
             config["ROUTING_LOSS_WEIGHT_DECAY"],
             config["NUM_TRAINING"] // config["BATCH_SIZE"] * 10,
         )
-        weight_scheduler_1 = StepDecay(
-            config["ROUTING_1_LOSS_WEIGHT"],
-            config["ROUTING_LOSS_WEIGHT_DECAY"],
-            config["NUM_TRAINING"] // config["BATCH_SIZE"] * 10,
-        )
+
     elif config["WEIGHT_DECAY_METHOD"] == "ExponentialDecay":
-        weight_scheduler_0 = ExponentialDecay(
+        weight_scheduler = ExponentialDecay(
             config["ROUTING_0_LOSS_WEIGHT"], config["ROUTING_LOSS_WEIGHT_DECAY"]
         )
-        weight_scheduler_1 = ExponentialDecay(
-            config["ROUTING_1_LOSS_WEIGHT"], config["ROUTING_LOSS_WEIGHT_DECAY"]
-        )
+
     elif config["WEIGHT_DECAY_METHOD"] == "EarlyStopping":
-        weight_scheduler_0 = EarlyStopping(
+        weight_scheduler = EarlyStopping(
             config["ROUTING_0_LOSS_WEIGHT"], config["ROUTING_EARLY_STOPPING_STEP"]
         )
-        weight_scheduler_1 = EarlyStopping(
-            config["ROUTING_1_LOSS_WEIGHT"], config["ROUTING_EARLY_STOPPING_STEP"]
-        )
 
-    return weight_scheduler_0, weight_scheduler_1
+    return weight_scheduler
 
 
 def reset_metrics(metrics_dict):
