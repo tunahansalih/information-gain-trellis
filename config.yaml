@@ -1,6 +1,13 @@
 DATASET:
-  desc: fashion_mnist or cifar100
+  desc: fashion_mnist, cifar10 or cifar100
   value: fashion_mnist
+MODEL:
+  desc: LENET, RESNET18,LENET_SLIM, RESNET18_SLIM
+  value: LENET
+
+RANDOM_SEED:
+  desc: random seed
+  value: 3333
 NUM_EPOCHS:
   value: 100
 BATCH_SIZE:
@@ -9,8 +16,6 @@ USE_ROUTING:
   value: True
 LR_INITIAL:
   value: 0.01
-MOMENTUM:
-  value: 0.9
 DROPOUT_RATE:
   value: 0.45
 NUM_ROUTES_0:
@@ -18,8 +23,6 @@ NUM_ROUTES_0:
 NUM_ROUTES_1:
   value: 2
 DECOUPLE_ROUTING_GRADIENTS:
-  value: False
-INFORMATION_GAIN_LOSS_NORMALIZATION:
   value: True
 ROUTING_0_LOSS_WEIGHT:
   value: 1
@@ -33,23 +36,17 @@ ROUTING_LOSS_WEIGHT_DECAY:
 ROUTING_EARLY_STOPPING_STEP:
   desc: Number of steps before stopping training of the routing layers, if EarlyStopping decay method is used
   value: 0
-CNN_0:
-  value: 32
-CNN_1:
-  value: 64
-CNN_2:
-  value: 128
-TAU_INITIAL:
+
+INFORMATION_GAIN_SOFTMAX_TEMPERATURE_INITIAL:
   value: 25
-TAU_DECAY_RATE:
+INFORMATION_GAIN_SOFTMAX_TEMPERATURE_DECAY_RATE:
   value: 0.9999
 ADD_GUMBEL_NOISE:
-  value: True
-INFORMATION_GAIN_BALANCE_COEFFICIENT:
+  value: False
+INFORMATION_GAIN_BALANCE_COEFFICIENT_INITIAL:
   value: 5
-NO_ROUTING_STEPS:
-  desc: Number of steps in the beginning of the training where no routing will be used
-  value: 0
+INFORMATION_GAIN_BALANCE_COEFFICIENT_DECAY_RATE:
+  value: 1
 RANDOM_ROUTING_STEPS:
   desc: Number of steps in the beginning of the training where random routing will be used
-  value: 9600
+  value: 3600
