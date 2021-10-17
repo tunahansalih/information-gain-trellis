@@ -53,6 +53,7 @@ class RoutingModel(models.Model):
             x = self.apply_routing(x, self.F_1, routing_0, training)
         else:
             x = self.F_1(x, training)
+            routing_0 = None
 
         if self.config["USE_ROUTING"]:
             if routing == Routing.RANDOM_ROUTING:
@@ -62,6 +63,7 @@ class RoutingModel(models.Model):
             x = self.apply_routing(x, self.F_2, routing_1, training)
         else:
             x = self.F_2(x, training)
+            routing_1 = None
 
         x = self.F_3(x, training)
 

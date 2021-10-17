@@ -215,16 +215,17 @@ for epoch in range(wandb.config["NUM_EPOCHS"]):
             )
             y_batch_val_index = tf.argmax(y_batch_val, axis=-1)
             y_pred_batch_val_index = tf.argmax(logits, axis=-1)
-            if current_routing in [
-                Routing.RANDOM_ROUTING,
-                Routing.INFORMATION_GAIN_ROUTING,
-            ]:
-                route_0 = tf.nn.softmax(route_0, axis=-1)
-                route_1 = tf.nn.softmax(route_1, axis=-1)
+            if wandb.config["USE_ROUTING"]:
+                if current_routing in [
+                    Routing.RANDOM_ROUTING,
+                    Routing.INFORMATION_GAIN_ROUTING,
+                ]:
+                    route_0 = tf.nn.softmax(route_0, axis=-1)
+                    route_1 = tf.nn.softmax(route_1, axis=-1)
 
-            for c, r_0, r_1 in zip(y_batch_val_index, route_0, route_1):
-                metrics["Route0"][c].update_state(r_0)
-                metrics["Route1"][c].update_state(r_1)
+                for c, r_0, r_1 in zip(y_batch_val_index, route_0, route_1):
+                    metrics["Route0"][c].update_state(r_0)
+                    metrics["Route1"][c].update_state(r_1)
 
             metrics["Accuracy"].update_state(y_batch_val_index, y_pred_batch_val_index)
 
@@ -254,20 +255,21 @@ for (x_batch_test, y_batch_test) in progress_bar:
     route_0, route_1, logits = model(
         x_batch_test, routing=current_routing, training=False
     )
-    y_batch_val_index = tf.argmax(y_batch_test, axis=-1)
-    y_pred_batch_val_index = tf.argmax(logits, axis=-1)
-    if current_routing in [
-        Routing.RANDOM_ROUTING,
-        Routing.INFORMATION_GAIN_ROUTING,
-    ]:
-        route_0 = tf.nn.softmax(route_0, axis=-1)
-        route_1 = tf.nn.softmax(route_1, axis=-1)
+    y_batch_test_index = tf.argmax(y_batch_test, axis=-1)
+    y_pred_batch_test_index = tf.argmax(logits, axis=-1)
+    if wandb.config["USE_ROUTING"]:
+        if current_routing in [
+            Routing.RANDOM_ROUTING,
+            Routing.INFORMATION_GAIN_ROUTING,
+        ]:
+            route_0 = tf.nn.softmax(route_0, axis=-1)
+            route_1 = tf.nn.softmax(route_1, axis=-1)
 
-    for c, r_0, r_1 in zip(y_batch_val_index, route_0, route_1):
-        metrics["Route0"][c].update_state(r_0)
-        metrics["Route1"][c].update_state(r_1)
+        for c, r_0, r_1 in zip(y_batch_test_index, route_0, route_1):
+            metrics["Route0"][c].update_state(r_0)
+            metrics["Route1"][c].update_state(r_1)
 
-    metrics["Accuracy"].update_state(y_batch_val_index, y_pred_batch_val_index)
+    metrics["Accuracy"].update_state(y_batch_test_index, y_pred_batch_test_index)
 
     progress_bar.set_description(
         f"Test Accuracy: %{metrics['Accuracy'].result().numpy() * 100:.2f}"
