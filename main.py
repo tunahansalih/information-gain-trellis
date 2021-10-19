@@ -10,7 +10,8 @@ from loss.information_gain import information_gain_loss_fn
 from loss.scheduling import StepDecay
 from nets.model import Routing, InformationGainRoutingResNetModel, InformationGainRoutingLeNetModel
 from utils.dataset import get_dataset
-from utils.helpers import routing_method, information_gain_weight_scheduler, current_learning_rate, reset_metrics
+from utils.helpers import routing_method, information_gain_weight_scheduler, current_learning_rate, reset_metrics, \
+    validation
 
 wandb.init(project="conditional-information-gain-trellis", entity="tunahansalih",
            config="config.yaml")
@@ -41,6 +42,12 @@ optimizer = tf.optimizers.Adam(
 model.compile(optimizer=optimizer)
 
 metrics = {
+    "Route0Prob": [
+        tf.keras.metrics.MeanTensor() for _ in range(wandb.config["NUM_CLASSES"])
+    ],
+    "Route1Prob": [
+        tf.keras.metrics.MeanTensor() for _ in range(wandb.config["NUM_CLASSES"])
+    ],
     "Route0": [
         tf.keras.metrics.MeanTensor() for _ in range(wandb.config["NUM_CLASSES"])
     ],
@@ -66,11 +73,11 @@ if wandb.config["USE_ROUTING"]:
         decay_step=2)
 
 global_step = 0
-for epoch in range(wandb.config["NUM_EPOCHS"]):
-    print(f"Epoch {epoch}")
 
+for epoch in range(wandb.config["NUM_EPOCHS"]):
     reset_metrics(metrics)
-    progress_bar = tqdm(dataset_train)
+    progress_bar = tqdm(dataset_train, colour='green')
+    progress_bar.set_description(f"Training: Epoch {epoch}")
 
     for i, (x_batch_train, y_batch_train) in enumerate(progress_bar):
         current_lr = current_learning_rate(global_step, wandb.config)
@@ -89,8 +96,6 @@ for epoch in range(wandb.config["NUM_EPOCHS"]):
             information_gain_balance_coefficient = 1
 
         with tf.GradientTape(persistent=True) as tape:
-            routing_0_loss = 0
-            routing_1_loss = 0
             route_0, route_1, logits = model(
                 x_batch_train,
                 routing=current_routing,
@@ -164,13 +169,12 @@ for epoch in range(wandb.config["NUM_EPOCHS"]):
         metrics["ClassificationLoss"].update_state(classification_loss)
 
         # Log metrics
-        if global_step % 100 == 0:
-            progress_bar.set_description(
-                f"Training Accuracy: %{metrics['Accuracy'].result().numpy() * 100:.2f} Loss: {metrics['TotalLoss'].result().numpy():.5f}"
-            )
+        progress_bar.set_postfix(
+            Accuracy=f"%{metrics['Accuracy'].result().numpy() * 100:.2f}",
+            Loss=f"{metrics['TotalLoss'].result().numpy():.5f}"
+        )
 
         global_step += 1
-
         if wandb.config["USE_ROUTING"]:
             wandb.log(
                 {
@@ -203,89 +207,9 @@ for epoch in range(wandb.config["NUM_EPOCHS"]):
                 },
                 step=global_step - 1,
             )
-
     # Validation
     if (epoch + 1) % 10 == 0 or (epoch + 1) == wandb.config["NUM_EPOCHS"]:
-        reset_metrics(metrics)
-        progress_bar = tqdm(dataset_validation)
-        current_routing = routing_method(step=global_step - 1, config=wandb.config)
-        for (x_batch_val, y_batch_val) in progress_bar:
-            route_0, route_1, logits = model(
-                x_batch_val, routing=current_routing, training=False
-            )
-            y_batch_val_index = tf.argmax(y_batch_val, axis=-1)
-            y_pred_batch_val_index = tf.argmax(logits, axis=-1)
-            if wandb.config["USE_ROUTING"]:
-                if current_routing in [
-                    Routing.RANDOM_ROUTING,
-                    Routing.INFORMATION_GAIN_ROUTING,
-                ]:
-                    route_0 = tf.nn.softmax(route_0, axis=-1)
-                    route_1 = tf.nn.softmax(route_1, axis=-1)
+        validation(model, dataset_validation, "Validation", epoch, wandb.config, metrics, global_step)
 
-                for c, r_0, r_1 in zip(y_batch_val_index, route_0, route_1):
-                    metrics["Route0"][c].update_state(r_0)
-                    metrics["Route1"][c].update_state(r_1)
-
-            metrics["Accuracy"].update_state(y_batch_val_index, y_pred_batch_val_index)
-
-            progress_bar.set_description(
-                f"Validation Accuracy: %{metrics['Accuracy'].result().numpy() * 100:.2f}"
-            )
-
-            result_log = {}
-            if wandb.config["USE_ROUTING"]:
-                for k in ["Route0", "Route1"]:
-                    for c, metric in enumerate(metrics[k]):
-                        data = [
-                            [path, ratio]
-                            for (path, ratio) in enumerate(metric.result().numpy())
-                        ]
-                        table = wandb.Table(data=data, columns=["Route", "Ratio"])
-                        result_log[f"Validation/{k}/Class_{c}"] = wandb.plot.bar(
-                            table, "Route", "Ratio", title=f"{k} Ratios For Class {c}"
-                        )
-            result_log["Validation/Accuracy"] = metrics["Accuracy"].result().numpy()
-            wandb.log(result_log, step=global_step - 1)
-
-reset_metrics(metrics)
-progress_bar = tqdm(dataset_test)
-current_routing = routing_method(step=global_step - 1, config=wandb.config)
-for (x_batch_test, y_batch_test) in progress_bar:
-    route_0, route_1, logits = model(
-        x_batch_test, routing=current_routing, training=False
-    )
-    y_batch_test_index = tf.argmax(y_batch_test, axis=-1)
-    y_pred_batch_test_index = tf.argmax(logits, axis=-1)
-    if wandb.config["USE_ROUTING"]:
-        if current_routing in [
-            Routing.RANDOM_ROUTING,
-            Routing.INFORMATION_GAIN_ROUTING,
-        ]:
-            route_0 = tf.nn.softmax(route_0, axis=-1)
-            route_1 = tf.nn.softmax(route_1, axis=-1)
-
-        for c, r_0, r_1 in zip(y_batch_test_index, route_0, route_1):
-            metrics["Route0"][c].update_state(r_0)
-            metrics["Route1"][c].update_state(r_1)
-
-    metrics["Accuracy"].update_state(y_batch_test_index, y_pred_batch_test_index)
-
-    progress_bar.set_description(
-        f"Test Accuracy: %{metrics['Accuracy'].result().numpy() * 100:.2f}"
-    )
-
-    result_log = {}
-    if wandb.config["USE_ROUTING"]:
-        for k in ["Route0", "Route1"]:
-            for c, metric in enumerate(metrics[k]):
-                data = [
-                    [path, ratio]
-                    for (path, ratio) in enumerate(metric.result().numpy())
-                ]
-                table = wandb.Table(data=data, columns=["Route", "Ratio"])
-                result_log[f"Test/{k}/Class_{c}"] = wandb.plot.bar(
-                    table, "Route", "Ratio", title=f"{k} Ratios For Class {c}"
-                )
-    result_log["Test/Accuracy"] = metrics["Accuracy"].result().numpy()
-    wandb.log(result_log, step=global_step - 1)
+    # Test
+validation(model, dataset_test, "Test", epoch, wandb.config, metrics, global_step)

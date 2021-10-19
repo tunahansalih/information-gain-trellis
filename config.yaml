@@ -11,11 +11,11 @@ RANDOM_SEED:
 NUM_EPOCHS:
   value: 100
 BATCH_SIZE:
-  value: 125
+  value: 100
 USE_ROUTING:
   value: True
 LR_INITIAL:
-  value: 0.01
+  value: 0.001
 DROPOUT_RATE:
   value: 0.45
 NUM_ROUTES_0:
@@ -24,9 +24,7 @@ NUM_ROUTES_1:
   value: 2
 DECOUPLE_ROUTING_GRADIENTS:
   value: True
-ROUTING_0_LOSS_WEIGHT:
-  value: 1
-ROUTING_1_LOSS_WEIGHT:
+ROUTING_LOSS_WEIGHT:
   value: 1
 WEIGHT_DECAY_METHOD:
   desc: StepDecay, ExponentialDecay, EarlyStopping or TimeBasedDecay
@@ -49,4 +47,4 @@ INFORMATION_GAIN_BALANCE_COEFFICIENT_DECAY_RATE:
   value: 1
 RANDOM_ROUTING_STEPS:
   desc: Number of steps in the beginning of the training where random routing will be used
-  value: 3600
+  value: 5400
