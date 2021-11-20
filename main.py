@@ -1,4 +1,6 @@
+import os.path
 import random
+import shutil
 from pprint import pprint
 
 import numpy as np
@@ -6,15 +8,25 @@ import tensorflow as tf
 import wandb
 from tqdm import tqdm
 
-from loss.information_gain import information_gain_loss_fn
+from loss.information_gain import information_gain_loss_fn, unsupervised_information_gain_loss_fn
 from loss.scheduling import StepDecay
 from nets.model import Routing, InformationGainRoutingResNetModel, InformationGainRoutingLeNetModel
 from utils.dataset import get_dataset
-from utils.helpers import routing_method, information_gain_weight_scheduler, current_learning_rate, reset_metrics, \
-    validation
+from utils.state_helpers import routing_method, information_gain_weight_scheduler, current_learning_rate, reset_metrics
+from utils.validation import validation
 
-wandb.init(project="conditional-information-gain-trellis", entity="tunahansalih",
-           config="config.yaml")
+config_file = 'config.yaml'
+
+wandb.init(project="conditional-unsupervised-information-gain-trellis", entity="tunahansalih",
+           config=config_file)
+
+experiment_name = f"{wandb.run.name}-{wandb.run.id}"
+
+artifact_dir = os.path.join('artifacts', experiment_name)
+os.makedirs(artifact_dir)
+
+shutil.copy(config_file, os.path.join(artifact_dir, config_file))
+
 pprint(wandb.config)
 
 random.seed(wandb.config["RANDOM_SEED"])
@@ -122,6 +134,22 @@ for epoch in range(wandb.config["NUM_EPOCHS"]):
                                                    p_n_given_x_2d=route_1,
                                                    balance_coefficient=information_gain_balance_coefficient)
                 )
+            elif (
+                    wandb.config["USE_ROUTING"]
+                    and current_routing == Routing.UNSUPERVISED_INFORMATION_GAIN_ROUTING
+            ):
+                route_0 = tf.nn.softmax(route_0, axis=-1)
+                route_1 = tf.nn.softmax(route_1, axis=-1)
+                routing_0_loss = (
+                        information_gain_loss_weight
+                        * unsupervised_information_gain_loss_fn(p_n_given_x_2d=route_0,
+                                                                balance_coefficient=information_gain_balance_coefficient)
+                )
+                routing_1_loss = (
+                        information_gain_loss_weight
+                        * unsupervised_information_gain_loss_fn(p_n_given_x_2d=route_1,
+                                                                balance_coefficient=information_gain_balance_coefficient)
+                )
             else:
                 routing_0_loss = 0
                 routing_1_loss = 0
@@ -139,7 +167,8 @@ for epoch in range(wandb.config["NUM_EPOCHS"]):
 
             if (
                     wandb.config["USE_ROUTING"]
-                    and current_routing == Routing.INFORMATION_GAIN_ROUTING
+                    and current_routing in [Routing.INFORMATION_GAIN_ROUTING,
+                                            Routing.UNSUPERVISED_INFORMATION_GAIN_ROUTING]
             ):
                 grads = tape.gradient(
                     routing_0_loss, model.H_0.trainable_weights
@@ -209,6 +238,7 @@ for epoch in range(wandb.config["NUM_EPOCHS"]):
             )
     # Validation
     if (epoch + 1) % 10 == 0 or (epoch + 1) == wandb.config["NUM_EPOCHS"]:
+        validation(model, dataset_train, "Training", epoch, wandb.config, metrics, global_step)
         validation(model, dataset_validation, "Validation", epoch, wandb.config, metrics, global_step)
 
     # Test

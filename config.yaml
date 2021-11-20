@@ -14,6 +14,9 @@ BATCH_SIZE:
   value: 100
 USE_ROUTING:
   value: True
+ROUTING_METHOD:
+  desc: Unsupervised, Supervised
+  value: Unsupervised
 LR_INITIAL:
   value: 0.001
 DROPOUT_RATE:
@@ -36,15 +39,15 @@ ROUTING_EARLY_STOPPING_STEP:
   value: 0
 
 INFORMATION_GAIN_SOFTMAX_TEMPERATURE_INITIAL:
-  value: 25
+  value: 1
 INFORMATION_GAIN_SOFTMAX_TEMPERATURE_DECAY_RATE:
-  value: 0.9999
+  value: 1
 ADD_GUMBEL_NOISE:
   value: False
 INFORMATION_GAIN_BALANCE_COEFFICIENT_INITIAL:
-  value: 5
+  value: 1
 INFORMATION_GAIN_BALANCE_COEFFICIENT_DECAY_RATE:
   value: 1
 RANDOM_ROUTING_STEPS:
   desc: Number of steps in the beginning of the training where random routing will be used
-  value: 5400
+  value: 0

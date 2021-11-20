@@ -15,6 +15,7 @@ from nets.layers import (
 class Routing(Enum):
     RANDOM_ROUTING = 0
     INFORMATION_GAIN_ROUTING = 1
+    UNSUPERVISED_INFORMATION_GAIN_ROUTING = 2
 
 
 class RoutingModel(models.Model):
@@ -48,7 +49,7 @@ class RoutingModel(models.Model):
         if self.config["USE_ROUTING"]:
             if routing == Routing.RANDOM_ROUTING:
                 routing_0 = self.H_0_random(x)
-            elif routing == Routing.INFORMATION_GAIN_ROUTING:
+            elif routing in [Routing.INFORMATION_GAIN_ROUTING, Routing.UNSUPERVISED_INFORMATION_GAIN_ROUTING]:
                 routing_0 = self.H_0(x) / temperature
             x = self.apply_routing(x, self.F_1, routing_0, training)
         else:
@@ -58,7 +59,7 @@ class RoutingModel(models.Model):
         if self.config["USE_ROUTING"]:
             if routing == Routing.RANDOM_ROUTING:
                 routing_1 = self.H_1_random(x)
-            elif routing == Routing.INFORMATION_GAIN_ROUTING:
+            elif routing in [Routing.INFORMATION_GAIN_ROUTING, Routing.UNSUPERVISED_INFORMATION_GAIN_ROUTING]:
                 routing_1 = self.H_1(x) / temperature
             x = self.apply_routing(x, self.F_2, routing_1, training)
         else:

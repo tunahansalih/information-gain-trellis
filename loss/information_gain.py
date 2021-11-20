@@ -31,3 +31,13 @@ def information_gain_loss_fn(p_c_given_x_2d, p_n_given_x_2d, balance_coefficient
     information_gain = (balance_coefficient * entropy_p_n) + entropy_p_c - entropy_p_cn
 
     return -information_gain
+
+
+def unsupervised_information_gain_loss_fn(p_n_given_x_2d, balance_coefficient=1.0):
+
+    h_p_n_given_x = entropy(prob_distribution=p_n_given_x_2d) / tf.cast(tf.shape(p_n_given_x_2d)[0], tf.float32)
+    p_n = tf.reduce_mean(p_n_given_x_2d, axis=0)
+    h_p_n = entropy(prob_distribution=p_n)
+
+    loss = h_p_n_given_x - balance_coefficient * h_p_n
+    return loss
