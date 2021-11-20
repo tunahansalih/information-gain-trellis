@@ -74,8 +74,8 @@ def validation(model, dataset, name, epoch, config, metrics, global_step):
                     for (path, ratio) in enumerate(metric.result().numpy())
                 ]
                 table = wandb.Table(data=data, columns=["Route", "Confidence"])
-                result_log[f"{name}/{k}/Class_{c}"] = wandb.plot.bar(
-                    table, "Route", "Ratio", title=f"{k} Ratios For Class {c}"
+                result_log[f"{name}/{k}/Class_{c}_confidence"] = wandb.plot.bar(
+                    table, "Route", "Confidence", title=f"{k} Ratios For Class {c}"
                 )
 
     route_0_all = tf.concat(route_0_list, 0)
