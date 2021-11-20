@@ -72,35 +72,42 @@ class RoutingModel(models.Model):
     def apply_routing(self, x, block, routing, training):
         x_output = 0
         for route in range(len(block)):
+            current_unit = block[route]
             selection = tf.where(tf.argmax(routing, axis=-1) == route)
             x_routed = tf.gather_nd(x, selection)
-            x_routed = block[route](x_routed, training=training)
-            x_routed_shape = tf.shape(x_routed, out_type=tf.dtypes.int64)
-            if len(x_routed_shape) == 2:  # Fully connected output
-                x_output += tf.scatter_nd(
-                    selection,
-                    x_routed,
-                    tf.stack(
-                        [
-                            tf.shape(x, out_type=tf.dtypes.int64)[0],
-                            x_routed_shape[1]
-                        ]
-                    ),
-                )
-            else:  # Convolution output
-                x_output += tf.scatter_nd(
-                    selection,
-                    x_routed,
-                    tf.stack(
-                        [
-                            tf.shape(x, out_type=tf.dtypes.int64)[0],
-                            x_routed_shape[1],
-                            x_routed_shape[2],
-                            x_routed_shape[3],
-                        ]
-                    ),
-                )
+            x_output += self.apply_unit(x_routed, selection, current_unit, tf.shape(x, out_type=tf.dtypes.int64)[0],
+                                        training)
         return x_output
+
+    def apply_unit(self, x, selection, unit, batch_size, training):
+        x = unit(x, training=training)
+        x_routed_shape = tf.shape(x, out_type=tf.dtypes.int64)
+        unit_output = tf.cond(pred=tf.size(x_routed_shape) == 2,
+                              true_fn=lambda: tf.scatter_nd(
+                                  selection,
+                                  x,
+                                  tf.stack(
+                                      [
+                                          batch_size,
+                                          x_routed_shape[1]
+                                      ]
+                                  ),
+                              ),
+                              false_fn=lambda: tf.scatter_nd(
+                                  selection,
+                                  x,
+                                  tf.stack(
+                                      [
+                                          batch_size,
+                                          x_routed_shape[1],
+                                          x_routed_shape[2],
+                                          x_routed_shape[3],
+                                      ]
+                                  ),
+                              )
+                              )
+
+        return unit_output
 
 
 class InformationGainRoutingLeNetModel(RoutingModel):

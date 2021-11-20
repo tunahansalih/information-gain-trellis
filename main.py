@@ -84,7 +84,7 @@ for epoch in range(wandb.config["NUM_EPOCHS"]):
         tf.keras.backend.set_value(optimizer.learning_rate, current_lr)
 
         current_routing = routing_method(step=global_step, config=wandb.config)
-        if wandb.config["USE_ROUTING"]:
+        if wandb.config["USE_ROUTING"] and current_routing == Routing.INFORMATION_GAIN_ROUTING:
             information_gain_loss_weight = information_gain_weight_scheduler.get_current_value(global_step)
             information_gain_softmax_temperature = information_gain_softmax_temperature_scheduler.get_current_value(
                 step=global_step)
