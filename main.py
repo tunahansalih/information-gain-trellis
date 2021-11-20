@@ -85,6 +85,9 @@ if wandb.config["USE_ROUTING"]:
         decay_step=2)
 
 global_step = 0
+information_gain_loss_weight = 0
+information_gain_softmax_temperature = 1
+information_gain_balance_coefficient = 1
 
 for epoch in range(wandb.config["NUM_EPOCHS"]):
     reset_metrics(metrics)
@@ -96,7 +99,8 @@ for epoch in range(wandb.config["NUM_EPOCHS"]):
         tf.keras.backend.set_value(optimizer.learning_rate, current_lr)
 
         current_routing = routing_method(step=global_step, config=wandb.config)
-        if wandb.config["USE_ROUTING"] and current_routing == Routing.INFORMATION_GAIN_ROUTING:
+        if wandb.config["USE_ROUTING"] and current_routing in [Routing.INFORMATION_GAIN_ROUTING,
+                                                               Routing.UNSUPERVISED_INFORMATION_GAIN_ROUTING]:
             information_gain_loss_weight = information_gain_weight_scheduler.get_current_value(global_step)
             information_gain_softmax_temperature = information_gain_softmax_temperature_scheduler.get_current_value(
                 step=global_step)
@@ -238,8 +242,14 @@ for epoch in range(wandb.config["NUM_EPOCHS"]):
             )
     # Validation
     if (epoch + 1) % 10 == 0 or (epoch + 1) == wandb.config["NUM_EPOCHS"]:
-        validation(model, dataset_train, "Training", epoch, wandb.config, metrics, global_step)
-        validation(model, dataset_validation, "Validation", epoch, wandb.config, metrics, global_step)
+        validation(model, dataset_train, "Training", epoch, wandb.config, metrics, global_step,
+                   information_gain_loss_weight, information_gain_balance_coefficient,
+                   information_gain_softmax_temperature)
 
-    # Test
-validation(model, dataset_test, "Test", epoch, wandb.config, metrics, global_step)
+        validation(model, dataset_validation, "Validation", epoch, wandb.config, metrics, global_step,
+                   information_gain_loss_weight, information_gain_balance_coefficient,
+                   information_gain_softmax_temperature)
+
+# Test
+validation(model, dataset_test, "Test", epoch, wandb.config, metrics, global_step, information_gain_loss_weight,
+           information_gain_balance_coefficient, information_gain_softmax_temperature)
