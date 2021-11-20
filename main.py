@@ -54,18 +54,18 @@ optimizer = tf.optimizers.Adam(
 model.compile(optimizer=optimizer)
 
 metrics = {
-    "Route0Prob": [
-        tf.keras.metrics.MeanTensor() for _ in range(wandb.config["NUM_CLASSES"])
-    ],
-    "Route1Prob": [
-        tf.keras.metrics.MeanTensor() for _ in range(wandb.config["NUM_CLASSES"])
-    ],
-    "Route0": [
-        tf.keras.metrics.MeanTensor() for _ in range(wandb.config["NUM_CLASSES"])
-    ],
-    "Route1": [
-        tf.keras.metrics.MeanTensor() for _ in range(wandb.config["NUM_CLASSES"])
-    ],
+    # "Route0Prob": [
+    #     tf.keras.metrics.MeanTensor() for _ in range(wandb.config["NUM_CLASSES"])
+    # ],
+    # "Route1Prob": [
+    #     tf.keras.metrics.MeanTensor() for _ in range(wandb.config["NUM_CLASSES"])
+    # ],
+    # "Route0": [
+    #     tf.keras.metrics.MeanTensor() for _ in range(wandb.config["NUM_CLASSES"])
+    # ],
+    # "Route1": [
+    #     tf.keras.metrics.MeanTensor() for _ in range(wandb.config["NUM_CLASSES"])
+    # ],
     "Accuracy": tf.keras.metrics.CategoricalAccuracy(),
     "TotalLoss": tf.keras.metrics.Mean(),
     "Routing0Loss": tf.keras.metrics.Mean(),

@@ -63,6 +63,6 @@ def reset_metrics(metrics_dict):
         "ClassificationLoss",
     ]:
         metrics_dict[metric].reset_states()
-    for metric in ["Route0", "Route1", "Route0Prob", "Route1Prob"]:
-        for metric_route in metrics_dict[metric]:
-            metric_route.reset_states()
+    # for metric in ["Route0", "Route1", "Route0Prob", "Route1Prob"]:
+    #     for metric_route in metrics_dict[metric]:
+    #         metric_route.reset_states()
