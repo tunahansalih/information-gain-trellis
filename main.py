@@ -194,7 +194,7 @@ for epoch in range(wandb.config["NUM_EPOCHS"]):
         del tape
         # Update metrics
         metrics["Accuracy"].update_state(
-            tf.argmax(y_batch_train, axis=-1), tf.argmax(logits, axis=-1)
+            y_batch_train, logits
         )
         metrics["TotalLoss"].update_state(loss_value)
         metrics["Routing0Loss"].update_state(routing_0_loss)

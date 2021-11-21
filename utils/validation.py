@@ -48,7 +48,6 @@ def validation(model, dataset, name, epoch, config, metrics, global_step, inform
 
         classification_loss = classification_loss_fn(y_batch, logits)
 
-
         if (
                 wandb.config["USE_ROUTING"]
                 and routing == Routing.INFORMATION_GAIN_ROUTING
@@ -94,7 +93,7 @@ def validation(model, dataset, name, epoch, config, metrics, global_step, inform
         #     metrics["Route1"][c].update_state(tf.math.round(r_1))
 
         loss_value = classification_loss + routing_0_loss + routing_1_loss
-        metrics["Accuracy"].update_state(y_batch_index, y_pred_batch_index)
+        metrics["Accuracy"].update_state(y_batch, logits)
         metrics["TotalLoss"].update_state(loss_value)
         metrics["Routing0Loss"].update_state(routing_0_loss)
         metrics["Routing1Loss"].update_state(routing_1_loss)
