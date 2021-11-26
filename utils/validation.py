@@ -128,16 +128,18 @@ def validation(model, dataset, name, epoch, config, metrics, global_step, inform
     #                 table, "Route", "Confidence", title=f"{k} Ratios For Class {c}"
     #             )
 
-    route_0_all = tf.concat(route_0_list, 0)
-    route_1_all = tf.concat(route_1_list, 0)
+    if wandb.config["USE_ROUTING"]:
+        route_0_all = tf.concat(route_0_list, 0)
+        route_1_all = tf.concat(route_1_list, 0)
     logits_all = tf.concat(logits_list, 0)
     y_batch_index_all = tf.concat(y_batch_index_list, 0)
 
     epoch_dir = os.path.join('artifacts', f"{wandb.run.name}-{wandb.run.id}", f"epoch_{epoch}", name)
     os.makedirs(epoch_dir)
 
-    np.savetxt(os.path.join(epoch_dir, 'route_0.csv'), route_0_all, delimiter=',')
-    np.savetxt(os.path.join(epoch_dir, 'route_1.csv'), route_1_all, delimiter=',')
+    if wandb.config["USE_ROUTING"]:
+        np.savetxt(os.path.join(epoch_dir, 'route_0.csv'), route_0_all, delimiter=',')
+        np.savetxt(os.path.join(epoch_dir, 'route_1.csv'), route_1_all, delimiter=',')
     np.savetxt(os.path.join(epoch_dir, 'logit.csv'), logits_all, delimiter=',')
     np.savetxt(os.path.join(epoch_dir, 'y.csv'), y_batch_index_all, delimiter=',')
 
