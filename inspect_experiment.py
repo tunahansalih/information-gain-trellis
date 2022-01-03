@@ -2,8 +2,8 @@ import os
 
 import numpy as np
 
-experiment_name = "splendid-dawn-7-7ww9wjys"
-epoch = 0
+experiment_name = "deft-wind-14-2d4gsyej"
+epoch = 99
 
 artifact_src = os.path.join("artifacts", experiment_name, f"epoch_{epoch}")
 
@@ -17,6 +17,7 @@ def softmax(x):
 
 
 def accuracy(mode):
+    print(mode)
     artifact_dir = os.path.join(artifact_src, mode)
     if os.path.exists(artifact_dir):
         logit = np.loadtxt(os.path.join(artifact_dir, "logit.csv"), delimiter=",")
@@ -25,6 +26,7 @@ def accuracy(mode):
 
 
 def routing_stats(mode):
+    print(mode)
     artifact_dir = os.path.join(artifact_src, mode)
     if os.path.exists(artifact_dir):
         route_0 = np.loadtxt(os.path.join(artifact_dir, "route_0.csv"), delimiter=",")

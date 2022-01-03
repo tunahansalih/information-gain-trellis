@@ -146,7 +146,7 @@ class InformationGainRoutingLeNetModel(RoutingModel):
             for i in range(config["NUM_ROUTES_1"]):
                 block = tf.keras.Sequential([layers.Flatten(),
                                              layers.Dense(
-                                                 units=100 // config["NUM_ROUTES_1"],
+                                                 units=1024 // config["NUM_ROUTES_1"],
                                                  activation=tf.nn.relu,
                                                  kernel_regularizer=regularizers.l2(0.01)
                                              )
@@ -155,14 +155,14 @@ class InformationGainRoutingLeNetModel(RoutingModel):
         else:
             self.F_2 = tf.keras.Sequential([layers.Flatten(),
                                             layers.Dense(
-                                                units=100 if not slim else 100 // config["NUM_ROUTES_1"],
+                                                units=1024 if not slim else 1024 // config["NUM_ROUTES_1"],
                                                 activation=tf.nn.relu,
                                                 kernel_regularizer=regularizers.l2(0.01)
                                             )
                                             ])
 
         self.F_3 = tf.keras.Sequential([layers.Dense(
-            units=100,
+            units=512,
             activation=tf.nn.relu,
             kernel_regularizer=regularizers.l2(0.01)),
             layers.Dense(config["NUM_CLASSES"])

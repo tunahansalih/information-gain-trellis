@@ -20,7 +20,7 @@ ROUTING_METHOD:
 LR_INITIAL:
   value: 0.001
 DROPOUT_RATE:
-  value: 0.45
+  value: 0.5
 NUM_ROUTES_0:
   value: 2
 NUM_ROUTES_1:
@@ -50,4 +50,4 @@ INFORMATION_GAIN_BALANCE_COEFFICIENT_DECAY_RATE:
   value: 1
 RANDOM_ROUTING_STEPS:
   desc: Number of steps in the beginning of the training where random routing will be used
-  value: 0
+  value: 5400
